@@ -14,6 +14,8 @@ class Command(BaseCommand):
         parser.add_argument("--partial", action="store_true",
                             help="增补文件：不判定“本次未出现”")
         parser.add_argument("--dry-run", action="store_true", help="只解析与预览，不写库")
+        parser.add_argument("--reprocess", action="store_true",
+                            help="该文件已成功导入过时，仍用当前映射/规则重新处理（新建批次，复用已归档原件）")
         parser.add_argument("--no-match", action="store_true", help="导入后不自动运行匹配")
 
     def handle(self, *args, **opts):
@@ -21,6 +23,7 @@ class Command(BaseCommand):
             result = import_source(
                 opts["path"], opts["supplier"], supplier_name=opts["supplier_name"],
                 mapping_path=opts["mapping"], partial=opts["partial"], dry_run=opts["dry_run"],
+                reprocess=opts["reprocess"],
             )
         except ImportFailed as exc:
             raise CommandError(str(exc)) from exc
@@ -28,7 +31,7 @@ class Command(BaseCommand):
         if result.duplicate:
             self.stdout.write(self.style.WARNING(
                 f"该文件已导入过（内容相同，sha256 一致），记为批次 #{result.batch.pk} [duplicate]，"
-                "未产生任何数据变化。"))
+                "未产生任何数据变化。如需用新的映射或规则重新处理，加 --reprocess。"))
             return
         self._print_mapping(result.parse)
         if result.dry_run:
@@ -63,3 +66,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(f"  重复映射列（已忽略）：{m['duplicates']}"))
         for p in parsed.problems:
             self.stdout.write(self.style.ERROR(f"  问题 {p['locator']}: {p['message']}"))
+        for t in parsed.unmatched:
+            self.stdout.write(self.style.WARNING(f"  表 {t['table']} 前几行（可用 --mapping 的 header_row 指定表头行）："))
+            for r in t["rows"]:
+                self.stdout.write(f"    {r['locator']}: {r['cells']}")

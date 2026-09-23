@@ -4,7 +4,9 @@ from . import views
 
 app_name = "matching"
 urlpatterns = [
-    path("", views.review_queue, name="review_queue"),
+    path("", views.group_queue, name="group_queue"),
+    path("groups/<int:key>/", views.group_detail, name="group_detail"),
+    path("pairs/", views.review_queue, name="review_queue"),
     path("<int:pk>/", views.candidate_detail, name="candidate_detail"),
     path("issues/", views.issue_list, name="issue_list"),
     path("issues/<int:pk>/decide/", views.issue_decide, name="issue_decide"),

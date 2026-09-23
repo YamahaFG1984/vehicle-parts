@@ -25,7 +25,7 @@ class MappingError(Exception):
 class MappingOverride:
     sheet: str | None = None
     header_row: int | None = None  # 1-based row number as shown in Excel / PDF table row
-    columns: dict[str, str] = field(default_factory=dict)  # header text -> field
+    columns: dict[str, str] = field(default_factory=dict)  # header text -> field ("" = ignore)
     brand: str | None = None
     sku_position_suffix: bool | None = None
 
@@ -33,13 +33,14 @@ class MappingOverride:
     def from_file(cls, path: Path) -> MappingOverride:
         data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
         known = set(rules.column_aliases()["fields"])
-        bad = {k: v for k, v in (data.get("columns") or {}).items() if v not in known}
+        columns = {str(k): (v or "") for k, v in (data.get("columns") or {}).items()}
+        bad = {k: v for k, v in columns.items() if v and v not in known}
         if bad:
-            raise MappingError(f"映射文件中的字段名无效：{bad}；可用字段：{sorted(known)}")
+            raise MappingError(f"映射文件中的字段名无效：{bad}；可用字段：{sorted(known)}（留空表示忽略该列）")
         return cls(
             sheet=data.get("sheet"),
             header_row=data.get("header_row"),
-            columns={str(k): v for k, v in (data.get("columns") or {}).items()},
+            columns=columns,
             brand=data.get("brand"),
             sku_position_suffix=data.get("sku_position_suffix"),
         )
@@ -62,6 +63,7 @@ class TableMapping:
     def as_dict(self) -> dict:
         return {
             "table": self.table,
+            "headers": self.headers,
             "header_locator": self.header_locator,
             "columns": {self.headers[i] or f"col{i + 1}": f for i, f in self.columns.items()},
             "unmapped": self.unmapped,
@@ -88,7 +90,7 @@ def _map_headers(headers: list[str], override: MappingOverride | None):
         key = normalize_header(header)
         if not key:
             continue
-        fld = pinned.get(key) or aliases.get(key)
+        fld = pinned[key] if key in pinned else aliases.get(key)  # pinned "" = ignore
         if not fld:
             unmapped.append(header)
         elif fld in columns.values():
@@ -106,7 +108,9 @@ def detect(table: RawTable, override: MappingOverride | None = None,
     scan = cfg.get("header_scan_rows", 30)
 
     candidates = list(enumerate(table.rows[:scan]))
-    if override and override.header_row:
+    forced = bool(override and override.header_row)
+    if forced:
+        # An explicitly chosen header row is accepted as is, so its columns can then be mapped.
         candidates = [
             (i, r) for i, r in enumerate(table.rows) if r.locator.get("row") == override.header_row
         ]
@@ -114,7 +118,7 @@ def detect(table: RawTable, override: MappingOverride | None = None,
     for i, row in candidates:
         headers = [to_text(c) for c in row.cells]
         columns, unmapped, duplicates = _map_headers(headers, override)
-        if len(columns) < min_matches or not required <= set(columns.values()):
+        if not forced and (len(columns) < min_matches or not required <= set(columns.values())):
             continue
         if best is None or len(columns) > len(best.columns):
             best = TableMapping(table.name, i, row.locator, headers, columns, unmapped, duplicates)

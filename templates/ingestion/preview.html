@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}预览 · {{ pending.name }} · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>导入预览 · {{ pending.name }}</h1>
+<p class="muted">尚未写入任何数据。确认列映射无误后点“确认导入”；映射不对可以直接在下面调整，然后“按此映射重新预览”。</p>
+
+{% if error %}<div class="box" style="border-color: var(--bad)"><strong>无法导入：</strong>{{ error }}</div>{% endif %}
+
+<form method="post">{% csrf_token %}
+{% if result %}
+<div class="box">
+  <p>供应商 <strong>{{ pending.supplier|default:"（按文件名推断）" }}</strong> · 共 {{ result.parse.rows|length }} 行数据 ·
+  {% for k, v in result.stats.items %}{% if k != "already_imported_as" %}<span class="tag">{{ k }} {{ v }}</span> {% endif %}{% endfor %}</p>
+  {% if result.already_imported %}
+  <p class="tag warn">内容相同的文件已成功导入过</p>
+  <label><input type="checkbox" name="reprocess" value="1"> 仍按当前映射重新处理（新建批次，复用已归档原件）</label>
+  {% endif %}
+  {% if not has_part_no %}<p class="tag bad">还没有任何一列映射为 supplier_part_no（供应商编号），无法导入</p>{% endif %}
+</div>
+
+<h2>列映射</h2>
+{% if headers %}
+<div class="table-wrap"><table>
+<thead><tr><th>原表头</th><th>映射到字段（留空 = 忽略该列）</th></tr></thead>
+<tbody>
+{% for h in headers %}
+<tr><td class="mono">{{ h.header }}</td>
+<td><input type="hidden" name="hdr_{{ forloop.counter }}" value="{{ h.header }}">
+<select name="map_{{ forloop.counter }}">
+  <option value="">（忽略）</option>
+  {% for f in fields %}<option value="{{ f }}" {% if f == h.field %}selected{% endif %}>{{ f }}</option>{% endfor %}
+</select>
+{% if not h.field %}<span class="tag warn">未识别</span>{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="muted">没有识别出表头。</p>
+{% endif %}
+
+{% if result.parse.unmatched %}
+<h2>未识别出表头的表</h2>
+<p>这些表的前几行如下。如果表头在其中某一行，填写它的行号后重新预览，再在上面为各列选择字段。</p>
+{% for t in result.parse.unmatched %}
+<div class="box"><strong>{{ t.table }}</strong>
+<div class="table-wrap"><table><tbody>
+{% for r in t.rows %}<tr><td class="mono muted">{{ r.locator.row }}</td>{% for c in r.cells %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div></div>
+{% endfor %}
+{% endif %}
+<p><label>表头行号（可选）：<input name="header_row" size="4" value="{{ pending.header_row|default_if_none:'' }}"></label></p>
+
+{% if result.parse.problems %}
+<h2>问题</h2>
+<ul>{% for p in result.parse.problems %}<li><span class="tag bad">问题</span> {{ p.message }} <span class="mono muted">{{ p.locator }}</span></li>{% endfor %}</ul>
+{% endif %}
+{% endif %}
+
+<p>
+  <button type="submit" name="action" value="repreview" class="secondary">按此映射重新预览</button>
+  <button type="submit" name="action" value="confirm" {% if not result or not has_part_no %}disabled{% endif %}>确认导入</button>
+  <button type="submit" name="action" value="cancel" class="secondary">取消</button>
+</p>
+</form>
+
+{% if rows %}
+<h2>数据预览（前 {{ rows|length }} 行）</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>来源定位</th><th>编号</th><th>预计状态</th><th>类别</th><th>位置</th><th>车型</th><th>尺寸</th><th>提示</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr><td class="mono">{{ r.locator }}</td><td>{{ r.part_no|default:"（空）" }}</td><td>{{ r.status }}</td>
+<td>{{ r.category|default:"?" }}</td><td>{{ r.position|default:"" }}</td><td>{{ r.fitment|default:"" }}</td>
+<td class="mono">{{ r.dims|default:"" }}</td><td>{% for f in r.findings %}<span class="tag">{{ f }}</span> {% endfor %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

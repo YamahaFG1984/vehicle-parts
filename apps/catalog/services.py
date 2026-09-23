@@ -84,6 +84,10 @@ def _sync_part_numbers(item, record, rec: NormalizedRecord) -> None:
         if key not in wanted:
             pn.delete()  # history of the raw value stays in FieldValue
     for (kind, norm), raw in wanted.items():
+        pn = existing.get((kind, norm))
+        if pn is not None and pn.number_raw != raw:  # same number, new spelling
+            pn.number_raw, pn.source_record = raw, record
+            pn.save(update_fields=["number_raw", "source_record", "modified"])
         if (kind, norm) not in existing and norm:
             PartNumber.objects.create(item=item, kind=kind, number_raw=raw, number_norm=norm,
                                       source_record=record)
@@ -116,6 +120,7 @@ def create_item(supplier, record, rec: NormalizedRecord, brand: str) -> Supplier
 
 
 def update_item(item: SupplierItem, record, rec: NormalizedRecord, brand: str) -> list[str]:
+    item.supplier_part_no = rec.supplier_part_no  # latest spelling; history is in FieldValue
     item.current_record = record
     item.present_in_latest = True
     _apply_attrs(item, rec, brand)

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}复核队列 · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>复核队列（按疑似组）</h1>
+<form class="filters" method="get">
+  <select name="reason"><option value="">全部原因</option>
+    {% for key, label in reason_labels.items %}<option value="{{ key }}" {% if key == reason %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button type="submit">筛选</button>
+  <a href="{% url 'matching:review_queue' %}">逐对查看</a> ·
+  <a href="{% url 'exports:download' 'review' %}">导出 xlsx（离线填写后回写）</a>
+</form>
+<p class="muted">{{ groups|length }} 组、{{ pair_count }} 对待确认。相互关联的记录（含已归一的产品）放在同一组，一页内对照处理；按优先级排序，共用 OE 冲突最先。</p>
+<div class="table-wrap"><table>
+<thead><tr><th>组</th><th>优先级</th><th>涉及条目</th><th>待确认对数</th><th>原因</th></tr></thead>
+<tbody>
+{% for g in groups %}
+<tr>
+<td><a href="{% url 'matching:group_detail' g.key %}">处理 →</a></td>
+<td>{{ g.priority }}</td>
+<td>{% for c in g.candidates %}{% if forloop.first %}{{ c.item_a.name }}{% endif %}{% endfor %}
+  <span class="muted">· {{ g.product_ids|length }} 个产品</span></td>
+<td>{{ g.candidates|length }}</td>
+<td>{% for r in g.reasons %}<span class="tag {% if r == 'SHARED_OE_CONFLICT' or r == 'CLUSTER_CONFLICT' %}bad{% else %}warn{% endif %}">{{ r }}</span> {% endfor %}</td>
+</tr>
+{% empty %}<tr><td colspan="5" class="muted">没有待确认的候选</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

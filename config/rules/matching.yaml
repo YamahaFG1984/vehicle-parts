@@ -1,7 +1,7 @@
-# 匹配规则参数。修改后请提升 version，并运行 `python manage.py run_matching --all [--dry-run]`。
-version: "2026.09-1"
+# 匹配规则参数。修改后请提升 version，并运行 `python manage.py run_matching --dry-run` 查看变化，再正式执行。
+version: "2026.09-2"
 
-weights:          # 字段相等时的得分；confidence = 得分 / 双方都有值字段的权重和
+weights:          # 字段相等时的得分；confidence = 得分 / 所有适用字段权重和（缺失计入分母）
   oe: 40
   category: 20
   fitment: 15
@@ -9,16 +9,20 @@ weights:          # 字段相等时的得分；confidence = 得分 / 双方都�
   position: 10
   name: 5         # 名称相似度 × 权重，仅作弱证据
 
-dims_tolerance_cm: 1.0      # 排序后逐维差值容差
-min_oe_length: 5            # 规范化后短于此长度的 OE 号不参与候选生成
+dims_tolerance_cm: 1.0        # 包装尺寸排序后逐维差值容差
+min_oe_length: 5              # 规范化后短于此长度的 OE 号不参与候选生成
 conflict_confidence_cap: 0.3  # 存在硬冲突时置信度上限
-hard_conflict_fields: [category, fitment, dims, position]
+
+# 硬冲突：任一冲突即一票否决自动归一。
+# 包装尺寸（dims）不在其中：供应商换包装很常见，尺寸不同只扣分并提示，不否决。
+hard_conflict_fields: [category, fitment, position]
 
 auto_confirm:
+  # false = 不自动归一：满足条件的记录以 SHARED_OE_FULL_MATCH 进入复核，由人批量确认
   enabled: true
-  require_shared_oe: true
-  required_equal: [category, fitment, dims]   # 位置需 equal 或 n/a
-  allow_same_supplier: false                  # 同供应商两个编号永不自动合并
+  # 必须全部 equal（位置可为 n/a），且这些字段不能缺失；包装尺寸不是必要条件
+  required_equal: [category, fitment]
+  allow_same_supplier: false   # 同供应商两个编号永不自动合并（聚类时同样防传递）
 
 blocking:
   oe: true
@@ -28,10 +32,16 @@ blocking:
 normalization:
   sku_position_suffix: true   # 编号以 L/R/LH/RH 结尾（前面是数字或分隔符）时作为位置证据之一
 
+# 资料质量检查：包装尺寸与同车型同类别都不同、却与同车型另一类别至少 N 条一致 → 疑似品名/类别错误
+name_error_check:
+  enabled: true
+  min_other_category_matches: 2
+
 # 疑似队列优先级（数字越小越靠前）
 priority:
   SHARED_OE_CONFLICT: 1
   SHARED_OE_INCOMPLETE: 2
+  SHARED_OE_FULL_MATCH: 3
   OE_DIFFER: 3
   NO_OE_ATTR_MATCH: 4
   SAME_SUPPLIER_DUP: 5

@@ -140,20 +140,26 @@ def export_review(path: Path) -> Path:
         status__in=[MatchCandidate.Status.PENDING, MatchCandidate.Status.NEEDS_INFO]
     ).select_related("item_a__supplier", "item_a__product", "item_a__current_record",
                      "item_b__supplier", "item_b__product", "item_b__current_record")
+    # Same grouping as the web review queue, so related pairs can be decided together offline.
+    from apps.matching.selectors import review_groups
+
+    group_of = {c.pk: n for n, g in enumerate(review_groups(), start=1) for c in g.candidates}
+    cands = sorted(cands, key=lambda c: (group_of.get(c.pk, 0), c.priority, -c.confidence, c.pk))
     rows = []
     for c in cands:
         conflicts = "；".join(
             f"{FIELD_LABELS.get(x['field'], x['field'])}: {_fmt(x['a'])} vs {_fmt(x['b'])}"
             + ("" if x.get("hard") else "（软）") for x in c.conflicts)
         rows.append([
-            c.pk, c.priority, "；".join(REASON_LABELS.get(r, r) for r in c.reasons), c.confidence,
+            c.pk, group_of.get(c.pk, ""), c.priority,
+            "；".join(REASON_LABELS.get(r, r) for r in c.reasons), c.confidence,
             *_item_brief(c.item_a), *_item_brief(c.item_b), conflicts or "—",
             "、".join(FIELD_LABELS.get(m, m) for m in c.missing) or "—", c.suggested_action,
             c.get_status_display(), "", "",
         ])
     wb = _new_workbook()
     _sheet(wb, "疑似重复", [
-        "candidate_id", "优先级", "触发原因", "置信度",
+        "candidate_id", "疑似组", "优先级", "触发原因", "置信度",
         "A 编号", "A 名称", "A 产品", "A 来源", "B 编号", "B 名称", "B 产品", "B 来源",
         "冲突字段", "缺失信息", "建议动作", "当前状态", "decision", "note",
     ], rows, widths={"建议动作": 70, "冲突字段": 40, "触发原因": 30},
@@ -180,6 +186,7 @@ def export_review(path: Path) -> Path:
     for line in [
         "在黄色的 decision / note 列填写后，运行：python manage.py import_review <本文件> --reviewer 姓名",
         "疑似重复 decision：merge（确认合并）/ reject（不是同一产品）/ needs_info（待补充资料）；留空表示不处理。",
+        "“疑似组”相同的行相互关联（同一批相似记录），建议一起对照判断。",
         "存在硬冲突的候选若选择 merge，必须在 note 说明理由。",
         "异常清单 decision：resolve（已解决）/ ignore（忽略）。",
         "任一行填写有误时整份文件不会写入，并逐行提示错误。",

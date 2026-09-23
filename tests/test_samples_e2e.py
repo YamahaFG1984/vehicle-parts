@@ -60,8 +60,8 @@ def test_offers_kept_separately(imported, item):
 @pytest.mark.parametrize(
     ("a", "b", "fields"),
     [
-        ("A-021", "B-019", {"category", "dims"}),   # OE-SHARED-01
-        ("A-022", "B-020", {"category", "dims"}),   # OE-SHARED-02 housing vs cap
+        ("A-021", "B-019", {"category"}),   # OE-SHARED-01 (package size differs too: soft)
+        ("A-022", "B-020", {"category"}),   # OE-SHARED-02 housing vs cap
         ("A-023", "B-021", {"position"}),           # OE-SHARED-03 left vs right
         ("A-026", "B-025", {"category"}),           # OE-CONFLICT-01 same size, other type
         ("A-027", "B-026", {"position"}),           # OE-CONFLICT-02
@@ -134,3 +134,19 @@ def test_matching_is_idempotent(imported):
     after = sorted(MC.objects.values_list("item_a", "item_b", "status"))
     assert before == after
     assert summary.reopened == 0
+
+
+def test_suspected_name_errors(imported):
+    flagged = set(Issue.objects.filter(code="SUSPECTED_NAME_ERROR", status="open")
+                  .values_list("item__source_ref", flat=True))
+    # B-025 "Bug Screen" and B-022 "Bug Screen" carry front-grille carton sizes.
+    assert {"B-025", "B-022"} <= flagged
+    # Shared cartons across types are fine when each also matches its own type.
+    assert not flagged & {"A-008", "A-010", "A-026", "A-006"}
+
+
+def test_name_error_check_is_recomputed(imported, item):
+    from apps.matching.engine import run_matching
+
+    run_matching()
+    assert Issue.objects.filter(code="SUSPECTED_NAME_ERROR", item=item("B-025")).count() == 1

@@ -12,17 +12,23 @@ from rapidfuzz import fuzz
 
 from apps.catalog.normalizers import category_label, dims_equal, is_sided
 
-EQUAL, CONFLICT, MISSING, NA = "equal", "conflict", "missing", "n/a"
+EQUAL, CONFLICT, MISSING, NA, PARTIAL = "equal", "conflict", "missing", "n/a", "partial"
+
+# Missing values in these fields block automatic merging; a missing package size does not.
+AUTO_REQUIRED_PRESENT = ("category", "fitment", "position", "fitment_years", "fitment_years_overlap")
 
 FIELD_LABELS = {
     "oe": "OE 号", "category": "类别", "fitment": "适配车型", "dims": "尺寸",
     "position": "位置", "fitment_years": "车型年份", "name": "名称",
+    "fitment_years_overlap": "车型年份仅部分重叠",
 }
 
 REASON_LABELS = {
     "AUTO_OE_FULL_MATCH": "共用 OE 且类别/车型/尺寸/位置全部一致",
     "SHARED_OE_CONFLICT": "共用 OE 但关键属性冲突",
     "SHARED_OE_INCOMPLETE": "共用 OE 但关键信息缺失",
+    "SHARED_OE_FULL_MATCH": "共用 OE 且关键属性一致（自动归一已关闭，待确认）",
+    "DIMS_DIFFER": "包装尺寸不同（仅提示）",
     "OE_DIFFER": "属性一致但 OE 号不同",
     "NO_OE_ATTR_MATCH": "无共同 OE，仅属性一致",
     "SAME_SUPPLIER_DUP": "同一供应商的两个编号",
@@ -135,7 +141,15 @@ def compare(a: ItemView, b: ItemView, cfg: dict) -> tuple[dict, list[str]]:
         if a.fitment_key != b.fitment_key:
             result = CONFLICT
         elif a.year_from and b.year_from:
-            result = EQUAL if (a.year_from, a.year_to) == (b.year_from, b.year_to) else CONFLICT
+            ra, rb = _years(a), _years(b)
+            if ra == rb:
+                result = EQUAL
+            elif ra[0] <= rb[1] and rb[0] <= ra[1]:
+                # Overlapping model years may be sloppy data or a different part: ask a human.
+                result = PARTIAL
+                extra_missing.append("fitment_years_overlap")
+            else:
+                result = CONFLICT
         else:
             result = EQUAL
             if a.year_from or b.year_from:
@@ -162,11 +176,15 @@ def compare(a: ItemView, b: ItemView, cfg: dict) -> tuple[dict, list[str]]:
     return out, extra_missing
 
 
+def _years(v: ItemView) -> tuple[int, int]:
+    return v.year_from, v.year_to or 9999  # "2010+" is open-ended
+
+
 def evaluate(a: ItemView, b: ItemView, cfg: dict) -> Outcome | None:
     """Classify a pair. Returns None when the pair is not worth recording."""
     cmp, extra_missing = compare(a, b, cfg)
     weights = cfg["weights"]
-    hard_fields = cfg.get("hard_conflict_fields", ["category", "fitment", "dims", "position"])
+    hard_fields = cfg.get("hard_conflict_fields", ["category", "fitment", "position"])
 
     conflicts = []
     for fld in ("oe", "category", "fitment", "dims", "position"):
@@ -192,18 +210,23 @@ def evaluate(a: ItemView, b: ItemView, cfg: dict) -> Outcome | None:
 
     same_supplier = a.supplier_id == b.supplier_id
     auto_cfg = cfg["auto_confirm"]
+    required_missing = [m for m in missing if m in AUTO_REQUIRED_PRESENT]
     required_ok = (
         all(cmp[f]["result"] == EQUAL for f in auto_cfg.get("required_equal", []))
         and cmp["position"]["result"] in (EQUAL, NA)
-        and not missing_except_oe(missing)
+        and not required_missing
     )
     attrs_match = cmp["category"]["result"] == EQUAL and (
-        cmp["fitment"]["result"] == EQUAL or cmp["dims"]["result"] == EQUAL)
+        cmp["fitment"]["result"] in (EQUAL, PARTIAL) or cmp["dims"]["result"] == EQUAL)
+    dims_differ = cmp["dims"]["result"] == CONFLICT
 
     reasons: list[str] = []
     if shared_oe and not same_supplier:
-        if not hard and required_ok and auto_cfg.get("enabled", True):
-            classification, reasons = "auto_confirmed", ["AUTO_OE_FULL_MATCH"]
+        if not hard and required_ok:
+            if auto_cfg.get("enabled", True):
+                classification, reasons = "auto_confirmed", ["AUTO_OE_FULL_MATCH"]
+            else:
+                classification, reasons = "suspect", ["SHARED_OE_FULL_MATCH"]
         elif hard:
             classification, reasons = "suspect", ["SHARED_OE_CONFLICT"]
         else:
@@ -217,7 +240,7 @@ def evaluate(a: ItemView, b: ItemView, cfg: dict) -> Outcome | None:
     elif shared_oe or attrs_match:
         classification = "suspect"
         if shared_oe:
-            reasons = ["SHARED_OE_INCOMPLETE"] if missing_except_oe(missing) else []
+            reasons = ["SHARED_OE_INCOMPLETE"] if required_missing else []
         elif cmp["oe"]["result"] == CONFLICT:
             reasons = ["OE_DIFFER"]
         else:
@@ -228,6 +251,8 @@ def evaluate(a: ItemView, b: ItemView, cfg: dict) -> Outcome | None:
         return None
     if classification == "suspect" and missing_except_oe(missing):
         reasons.append("MISSING_KEY_FIELDS")
+    if dims_differ and classification != "auto_rejected":
+        reasons.append("DIMS_DIFFER")
     reasons = list(dict.fromkeys(reasons))  # dedupe, keep order
 
     prio_cfg = cfg.get("priority", {})
@@ -250,33 +275,49 @@ def _fields(names) -> str:
     return "、".join(FIELD_LABELS.get(n, n) for n in names)
 
 
+def _gaps(missing) -> str:
+    """'缺少尺寸、车型年份' / '车型年份仅部分重叠' phrasing for the missing list."""
+    lacking = [m for m in missing_except_oe(missing) if m != "fitment_years_overlap"]
+    parts = [f"缺少{_fields(lacking)}"] if lacking else []
+    if "fitment_years_overlap" in missing:
+        parts.append("车型年份仅部分重叠")
+    return "，".join(parts)
+
+
 def suggest(classification, reasons, a, b, cmp, conflicts, missing) -> str:
+    dims_note = ""
+    if "DIMS_DIFFER" in reasons:
+        dims_note = (f"包装尺寸不同（{_fmt(cmp['dims']['a'])} vs {_fmt(cmp['dims']['b'])}），"
+                     "可能是换了包装，也可能是录入错误，仅作提示。")
     if classification == "auto_confirmed":
-        return "规则已自动归一；如判断有误，可在产品页拆分。"
+        return ("规则已自动归一；如判断有误，可在产品页拆分。 " + dims_note).strip()
     if classification == "auto_rejected":
         return "规则判定为不同产品（" + _fields(c["field"] for c in conflicts if c["hard"]) + "冲突），无需处理。"
     parts = []
     shared = cmp["oe"].get("shared_display", [])
     conflict_desc = "；".join(
         f"{FIELD_LABELS[c['field']]}：{a.label}={_fmt(c['a'])} vs {b.label}={_fmt(c['b'])}"
-        for c in conflicts if c["field"] != "oe")
+        for c in conflicts if c.get("hard"))
     if "SHARED_OE_CONFLICT" in reasons:
         parts.append(
             f"{', '.join(shared)} 同时出现在 {a.label}（{category_label(a.category) or '?'}）与 "
             f"{b.label}（{category_label(b.category) or '?'}），冲突：{conflict_desc}。"
             "请向供应商核对 OE 号是否录错或是否为通用参考号；默认不合并。")
+    if "SHARED_OE_FULL_MATCH" in reasons:
+        parts.append(f"共用 {', '.join(shared)}，类别、车型、位置一致；自动归一已关闭，核实后可确认合并。")
     if "SHARED_OE_INCOMPLETE" in reasons:
-        parts.append(f"共用 {', '.join(shared)}，但缺少{_fields(missing_except_oe(missing))}。"
-                     "请补充资料后重新导入，或在核实后确认合并。")
+        parts.append(f"共用 {', '.join(shared)}，但{_gaps(missing)}。请补充资料后重新导入，或在核实后确认合并。")
     if "OE_DIFFER" in reasons:
         parts.append(f"属性一致但 OE 号不同（{_fmt(cmp['oe']['a'])} vs {_fmt(cmp['oe']['b'])}），"
                      "可能是不同代次或替代件，请核对。")
     if "NO_OE_ATTR_MATCH" in reasons:
-        parts.append("无共同 OE 号，仅类别/车型/尺寸一致；请查看图片或向供应商索要 OE 号后确认。")
+        parts.append("无共同 OE 号，仅类别/车型/尺寸相近；请查看图片或向供应商索要 OE 号后确认。")
     if "SAME_SUPPLIER_DUP" in reasons:
         parts.append("同一供应商的两个编号属性相近：可能是重复录入，也可能是不同品质档，请向供应商确认。")
     if "MISSING_KEY_FIELDS" in reasons and "SHARED_OE_INCOMPLETE" not in reasons:
-        parts.append(f"缺少{_fields(missing_except_oe(missing))}，判断依据不足。")
+        parts.append(f"{_gaps(missing)}，判断依据不足。")
+    if dims_note:
+        parts.append(dims_note)
     return " ".join(parts)
 
 

@@ -7,6 +7,7 @@ from apps.matching.models import Issue, MatchCandidate
 
 from . import selectors
 from .models import FieldValue, Product, SupplierItem
+from .normalizers import normalize_number
 
 
 def dashboard(request):
@@ -78,8 +79,10 @@ def item_detail(request, pk):
         "supplier", "product", "current_record__batch__source_file"), pk=pk)
     values = FieldValue.objects.filter(item=item).select_related(
         "source_record__batch__source_file").order_by("field", "-is_current", "-created")
-    observations = item.supplier.records.filter(supplier_part_no=item.supplier_part_no) \
-        .select_related("batch__source_file").order_by("-batch_id")
+    # Rows are matched on the normalized number, so earlier spellings (A-03-L vs A03L) show too.
+    key = normalize_number(item.supplier_part_no)
+    observations = [r for r in item.supplier.records.select_related("batch__source_file")
+                    .order_by("-batch_id") if normalize_number(r.supplier_part_no) == key]
     return render(request, "catalog/item_detail.html", {
         "item": item, "values": values, "observations": observations,
         "offers": item.offers.select_related("source_record").all(),

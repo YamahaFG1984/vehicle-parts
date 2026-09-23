@@ -4,8 +4,8 @@
 <h1>导入资料</h1>
 <form class="box" method="post" enctype="multipart/form-data">{% csrf_token %}
   {{ form.as_p }}
-  <button type="submit">导入并匹配</button>
-  <p class="muted">原件按 sha256 归档、不会覆盖；内容相同的文件会被识别为重复。新格式建议先在命令行 <code>import_source 文件 --dry-run</code> 检查列识别。</p>
+  <button type="submit">上传并预览</button>
+  <p class="muted">上传后先进入预览：查看识别出的表头与列映射、可以调整，确认后才入库。原件按 sha256 归档、不会覆盖；内容相同且已成功导入的文件会被识别为重复。</p>
 </form>
 <h2>导入批次</h2>
 {% include "ingestion/_batch_table.html" %}

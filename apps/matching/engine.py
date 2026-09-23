@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from django.db import transaction
 
 from apps.catalog.models import Product, SupplierItem
-from apps.catalog.normalizers import category_label
+from apps.catalog.normalizers import Finding, category_label, dims_equal
 from apps.core import rules as rule_files
 
 from . import issues as issue_service
@@ -276,23 +276,68 @@ def _run(cfg: dict, summary: MatchSummary, dry_run: bool) -> None:
     # 4) Products follow clusters; product codes stay stable where possible.
     _assign_products(dsu, items, views, summary)
 
-    # 5) Items that cannot be matched at all need more data.
+    # 5) Data-quality findings that depend on the whole catalog, recomputed every run.
+    findings = {}
     for item in items:
         v = views[item.pk]
         if not v.oe and (not v.category or (not v.fitment_key and not v.dims)):
-            issue_service.record_findings(
-                [_insufficient(v)], item=item, record=item.current_record)
+            findings.setdefault(item.pk, []).append(_insufficient(v))
+    if cfg.get("name_error_check", {}).get("enabled", True):
+        for item_id, finding in _name_error_findings(views, cfg).items():
+            findings.setdefault(item_id, []).append(finding)
+    issue_service.sync_system_findings(
+        {i.pk: i for i in items}, findings, codes=SYSTEM_FINDING_CODES)
 
     summary.status = Counter(MC.objects.values_list("status", flat=True))
 
 
-def _insufficient(v: ItemView):
-    from apps.catalog.normalizers import Finding
+SYSTEM_FINDING_CODES = ("INSUFFICIENT_FOR_MATCHING", "SUSPECTED_NAME_ERROR")
 
+
+def _insufficient(v: ItemView):
     lacking = [n for n, ok in (("OE 号", v.oe), ("类别", v.category), ("车型", v.fitment_key),
                                ("尺寸", v.dims)) if not ok]
     return Finding("INSUFFICIENT_FOR_MATCHING", "warning", "",
                    f"缺少{'、'.join(lacking)}，无法与其他记录比对，归入待补充")
+
+
+def _name_error_findings(views: dict, cfg: dict) -> dict:
+    """Package size unlike every same-type record of this truck model, yet identical to several
+    records of another type for the same model: the name (or the size) is probably wrong.
+
+    Shared packaging between two types is fine as long as each record also matches its own type
+    (e.g. air filter housing and fan shroud for the Century share one carton size).
+    """
+    tol = cfg["dims_tolerance_cm"]
+    need = cfg.get("name_error_check", {}).get("min_other_category_matches", 2)
+    by_model = defaultdict(list)
+    for v in views.values():
+        if v.category and v.fitment_key and v.dims:
+            by_model[v.fitment_key].append(v)
+    out = {}
+    for group in by_model.values():
+        for v in group:
+            same = [o for o in group if o.id != v.id and o.category == v.category]
+            if any(dims_equal(v.dims, o.dims, tol) for o in same):
+                continue
+            lookalikes = defaultdict(list)
+            for o in group:
+                if o.category != v.category and dims_equal(v.dims, o.dims, tol):
+                    lookalikes[o.category].append(o)
+            best = max(lookalikes.items(), key=lambda kv: len(kv[1]), default=None)
+            if not best or len(best[1]) < need:
+                continue
+            other_cat, others = best
+            dims = " x ".join(f"{d:g}" for d in v.dims)
+            peers = f"与同车型的 {len(same)} 条 {category_label(v.category)} 都不同" if same else \
+                f"同车型没有其他 {category_label(v.category)} 可对照"
+            out[v.id] = Finding(
+                "SUSPECTED_NAME_ERROR", "warning", "name",
+                f"包装尺寸 {dims} cm 与同车型的 {len(others)} 条 {category_label(other_cat)} 一致"
+                f"（{', '.join(o.label for o in others[:4])}），{peers}：疑似品名/类别或尺寸录错，请核对",
+                {"lookalike_category": other_cat, "lookalikes": [o.label for o in others],
+                 "same_category_peers": [o.label for o in same]})
+    return out
 
 
 def _cluster_clash(left: set, right: set, views: dict, cfg: dict):

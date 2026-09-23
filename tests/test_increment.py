@@ -32,12 +32,13 @@ def test_price_update_keeps_history(incremented, item):
     assert [(str(o.price), o.is_current) for o in offers] == [("42.6700", False), ("44.1000", True)]
 
 
-def test_key_change_reopens_auto_merge(incremented, pair, item):
+def test_package_change_keeps_merge_but_is_flagged(incremented, pair, item):
+    # A new carton size is not evidence of a different product: stay merged, flag for review.
     cand = pair("A-006", "B-006")
-    assert cand.status == MC.Status.PENDING
-    assert "SHARED_OE_CONFLICT" in cand.reasons
-    assert item("A-006").product_id != item("B-006").product_id
-    issue = Issue.objects.get(item=item("A-006"), code="KEY_ATTR_CHANGED")
+    assert cand.status == MC.Status.ACCEPTED
+    assert "DIMS_DIFFER" in cand.reasons
+    assert item("A-006").product_id == item("B-006").product_id
+    issue = Issue.objects.get(item=item("A-006"), code="KEY_ATTR_CHANGED", status="open")
     assert issue.details["changes"]["dims"]["new"] == [151.0, 91.0, 20.0]
 
 

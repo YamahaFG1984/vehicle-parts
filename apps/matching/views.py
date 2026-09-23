@@ -4,12 +4,60 @@ from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods, require_POST
 
-from . import services
+from . import selectors, services
+from .engine import run_matching
 from .forms import CandidateDecisionForm, IssueDecisionForm
-from .models import Issue, MatchCandidate
+from .models import Issue, MatchCandidate, ReviewDecision
 from .rules import FIELD_LABELS, REASON_LABELS
 
 OPEN = [MatchCandidate.Status.PENDING, MatchCandidate.Status.NEEDS_INFO]
+
+
+def group_queue(request):
+    reason = request.GET.get("reason", "")
+    groups = selectors.review_groups(reason)
+    return render(request, "matching/group_queue.html", {
+        "groups": groups, "reason": reason, "reason_labels": REASON_LABELS,
+        "pair_count": sum(len(g.candidates) for g in groups),
+    })
+
+
+@require_http_methods(["GET", "POST"])
+def group_detail(request, key):
+    group = selectors.group_containing(key)
+    if group is None:
+        messages.info(request, "该组已处理完毕。")
+        return redirect("matching:group_queue")
+    error = None
+    if request.method == "POST":
+        note = request.POST.get("note", "").strip()
+        bulk = request.POST.get("bulk")
+        plan = []
+        for cand in group.candidates:
+            choice = "reject" if bulk == "reject_all" else request.POST.get(f"decision_{cand.pk}", "")
+            if not choice:
+                continue
+            action = services.parse_action(choice)
+            hard = [c["field"] for c in cand.conflicts if c.get("hard")]
+            if action == ReviewDecision.Action.MERGE and hard and not note:
+                error = f"候选 #{cand.pk} 有硬冲突（{', '.join(hard)}），确认合并必须填写备注"
+                break
+            plan.append((cand, action))
+        if not error and not plan:
+            error = "没有选择任何决定"
+        if not error:
+            for cand, action in plan:
+                services.decide_candidate(cand, action, user=request.user, note=note,
+                                          recluster=False)
+            run_matching()
+            messages.success(request, f"已记录 {len(plan)} 条决定并重新聚类。")
+            groups = selectors.review_groups()
+            return redirect("matching:group_detail", key=groups[0].key) if groups \
+                else redirect("matching:group_queue")
+    return render(request, "matching/group_detail.html", {
+        "group": group, "error": error, "reason_labels": REASON_LABELS,
+        "field_labels": FIELD_LABELS,
+    })
 
 
 def review_queue(request):
@@ -44,8 +92,7 @@ def candidate_detail(request, pk):
             form.add_error("note", exc)
         else:
             messages.success(request, f"候选 #{cand.pk} 已记录决定并重新聚类。")
-            nxt = MatchCandidate.objects.filter(status__in=OPEN).first()
-            return redirect(nxt or "matching:review_queue")
+            return redirect("matching:group_queue")
     rows = []
     for fld in ("oe", "category", "fitment", "dims", "position", "name"):
         c = cand.comparisons.get(fld)

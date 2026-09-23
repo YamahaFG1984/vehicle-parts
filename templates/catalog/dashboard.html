@@ -5,7 +5,7 @@
   <div class="card"><div class="n">{{ item_count }}</div><div class="l">供应商条目</div></div>
   <div class="card"><div class="n">{{ product_count }}</div><div class="l">归一产品</div></div>
   <div class="card"><div class="n">{{ states.已确认归一 }}</div><div class="l"><a href="{% url 'catalog:search' %}?state=已确认归一">已确认归一（多成员）</a></div></div>
-  <div class="card"><div class="n">{{ pending }}</div><div class="l"><a href="{% url 'matching:review_queue' %}">疑似重复待确认</a></div></div>
+  <div class="card"><div class="n">{{ pending }}</div><div class="l"><a href="{% url 'matching:group_queue' %}">疑似重复待确认（对）</a></div></div>
   <div class="card"><div class="n">{{ states.独立产品 }}</div><div class="l"><a href="{% url 'catalog:search' %}?state=独立产品">独立产品</a></div></div>
   <div class="card"><div class="n">{{ states.待补充 }}</div><div class="l"><a href="{% url 'catalog:search' %}?state=待补充">待补充</a></div></div>
   <div class="card"><div class="n">{{ open_issues }}</div><div class="l"><a href="{% url 'matching:issue_list' %}">未处理异常</a></div></div>

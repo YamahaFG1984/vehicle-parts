@@ -73,3 +73,41 @@ def test_missing_oe_lowers_confidence():
     with_oe = evaluate(view(1), view(2, supplier=2), cfg())
     without = evaluate(view(1, oe=frozenset()), view(2, supplier=2, oe=frozenset()), cfg())
     assert without.confidence < with_oe.confidence
+
+
+def test_package_size_is_soft():
+    out = evaluate(view(1), view(2, supplier=2, dims=(122.0, 75.0, 20.0)), cfg())
+    assert out.classification == "auto_confirmed"  # carton size alone never splits
+    assert "DIMS_DIFFER" in out.reasons
+    assert not [c for c in out.conflicts if c["hard"]]
+
+
+def test_missing_package_size_does_not_block_auto_merge():
+    out = evaluate(view(1), view(2, supplier=2, dims=None), cfg())
+    assert out.classification == "auto_confirmed"
+
+
+def test_overlapping_years_need_a_human():
+    out = evaluate(view(1), view(2, supplier=2, year_from=2019, year_to=2023), cfg())
+    assert out.classification == "suspect"
+    assert out.comparisons["fitment"]["result"] == "partial"
+    assert "fitment_years_overlap" in out.missing
+
+
+def test_disjoint_years_conflict():
+    out = evaluate(view(1), view(2, supplier=2, year_from=2004, year_to=2017), cfg())
+    assert [c["field"] for c in out.conflicts if c["hard"]] == ["fitment"]
+
+
+def test_open_ended_years_overlap():
+    out = evaluate(view(1, year_to=None), view(2, supplier=2, year_from=2020, year_to=2023), cfg())
+    assert out.comparisons["fitment"]["result"] == "partial"
+
+
+def test_auto_merge_can_be_switched_off():
+    c = dict(cfg())
+    c["auto_confirm"] = {**c["auto_confirm"], "enabled": False}
+    out = evaluate(view(1), view(2, supplier=2), c)
+    assert out.classification == "suspect"
+    assert out.reasons == ["SHARED_OE_FULL_MATCH"]
+    assert "自动归一已关闭" in out.suggested_action

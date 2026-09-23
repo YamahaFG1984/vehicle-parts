@@ -2,7 +2,8 @@
 {% load vp %}
 {% block title %}复核队列 · 零件资料归一化{% endblock %}
 {% block content %}
-<h1>复核队列</h1>
+<h1>复核队列（逐对）</h1>
+<p><a href="{% url 'matching:group_queue' %}">← 按疑似组处理（推荐）</a></p>
 <form class="filters" method="get">
   <select name="status">
     <option value="open" {% if status == "open" %}selected{% endif %}>待确认 + 待补充资料</option>

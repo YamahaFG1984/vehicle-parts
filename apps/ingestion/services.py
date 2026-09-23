@@ -16,7 +16,13 @@ from django.utils import timezone
 
 from apps.catalog import services as catalog
 from apps.catalog.models import SupplierItem
-from apps.catalog.normalizers import Finding, normalize_header, normalize_record, to_text
+from apps.catalog.normalizers import (
+    Finding,
+    normalize_header,
+    normalize_number,
+    normalize_record,
+    to_text,
+)
 from apps.core import rules
 from apps.matching import issues as issue_service
 
@@ -48,6 +54,7 @@ class ParseResult:
     mappings: list[dict] = field(default_factory=list)
     skipped_tables: list[str] = field(default_factory=list)
     problems: list[dict] = field(default_factory=list)
+    unmatched: list[dict] = field(default_factory=list)  # first rows of tables without a header
 
 
 @dataclass
@@ -58,6 +65,7 @@ class ImportResult:
     parse: ParseResult | None = None
     stats: dict = field(default_factory=dict)
     preview: list[dict] = field(default_factory=list)
+    already_imported: bool = False  # dry run: same content was already imported successfully
 
 
 def sha256_of(path: Path) -> str:
@@ -88,6 +96,9 @@ def parse_file(path: Path, file_type: str, override: mapping.MappingOverride | N
         if tm is None:
             if table.rows:
                 result.skipped_tables.append(table.name)
+                result.unmatched.append({"table": table.name, "rows": [
+                    {"locator": r.locator, "cells": [to_text(c) for c in r.cells]}
+                    for r in table.rows[:8]]})
                 result.problems.append({
                     "locator": table.rows[0].locator,
                     "message": f"表 {table.name} 未识别到表头（需包含供应商编号列且至少 "
@@ -121,9 +132,24 @@ def parse_file(path: Path, file_type: str, override: mapping.MappingOverride | N
     return result
 
 
+NO_ROWS_HINT = (
+    "请先用 --dry-run（网页为“仅预览”）查看表头识别结果，然后在 config/rules/column_aliases.yaml "
+    "补充列别名，或用 --mapping 指定表头行与列映射（网页预览页可直接调整映射）后重新导入。"
+)
+
+
+def _has_successful_batch(source_file: SourceFile) -> bool:
+    return any(b.status == ImportBatch.Status.SUCCEEDED and b.stats.get("rows", 0) > 0
+               for b in source_file.batches.all())
+
+
 def import_source(path, supplier_code: str | None = None, *, supplier_name: str | None = None,
-                  mapping_path=None, partial: bool = False, dry_run: bool = False,
+                  mapping_path=None, override: mapping.MappingOverride | None = None,
+                  partial: bool = False, dry_run: bool = False, reprocess: bool = False,
                   user=None, original_name: str | None = None) -> ImportResult:
+    """Import one file. A file whose content was already imported successfully is a no-op
+    (duplicate) unless reprocess=True; a file that never produced rows can always be retried,
+    e.g. after fixing column aliases, and reuses the archived original."""
     path = Path(path)
     if not path.exists():
         raise ImportFailed(f"文件不存在：{path}")
@@ -135,7 +161,11 @@ def import_source(path, supplier_code: str | None = None, *, supplier_name: str 
     supplier_code = (supplier_code or guess_supplier_code(Path(original_name)) or "").upper()
     if not supplier_code:
         raise ImportFailed("无法从文件名推断供应商，请用 --supplier 指定")
-    override = mapping.MappingOverride.from_file(mapping_path) if mapping_path else None
+    if mapping_path:
+        try:
+            override = mapping.MappingOverride.from_file(mapping_path)
+        except mapping.MappingError as exc:
+            raise ImportFailed(str(exc)) from exc
     digest = sha256_of(path)
 
     existing = SourceFile.objects.filter(sha256=digest).first()
@@ -143,6 +173,7 @@ def import_source(path, supplier_code: str | None = None, *, supplier_name: str 
         if existing.supplier.code != supplier_code:
             raise ImportFailed(
                 f"该文件（sha256 {digest[:12]}…）已作为供应商 {existing.supplier.code} 导入过")
+    if existing and not dry_run and not reprocess and _has_successful_batch(existing):
         batch = ImportBatch.objects.create(
             source_file=existing, status=ImportBatch.Status.DUPLICATE, created_by=user,
             finished_at=timezone.now(), ruleset_version=rules.matching()["version"],
@@ -154,15 +185,22 @@ def import_source(path, supplier_code: str | None = None, *, supplier_name: str 
         parsed = parse_file(path, file_type, override, original_name)
     except (extractors.ExtractionError, mapping.MappingError) as exc:
         raise ImportFailed(str(exc)) from exc
-    if not parsed.rows and not parsed.problems:
-        raise ImportFailed("文件中没有可导入的数据行")
+    if dry_run:
+        use_suffix = (override.sku_position_suffix if override and override.sku_position_suffix
+                      is not None else None)
+        normalized = [(row, normalize_record(_values(row), use_suffix)) for row in parsed.rows]
+        result = _preview(supplier_code, parsed, normalized, existing)
+        result.already_imported = bool(existing and _has_successful_batch(existing))
+        return result
+    if not parsed.rows:
+        details = "；".join(p["message"] for p in parsed.problems) or "文件中没有数据行"
+        raise ImportFailed(f"没有识别出任何可导入的数据行（{details}）。{NO_ROWS_HINT}")
+    if not any("supplier_part_no" in m["columns"].values() for m in parsed.mappings):
+        raise ImportFailed(f"没有任何一列被映射为供应商编号（supplier_part_no），无法跟踪条目。{NO_ROWS_HINT}")
 
     use_suffix = (override.sku_position_suffix if override and override.sku_position_suffix
                   is not None else None)
     normalized = [(row, normalize_record(_values(row), use_suffix)) for row in parsed.rows]
-
-    if dry_run:
-        return _preview(supplier_code, parsed, normalized, existing)
 
     with transaction.atomic():
         supplier, _ = Supplier.objects.get_or_create(
@@ -170,21 +208,27 @@ def import_source(path, supplier_code: str | None = None, *, supplier_name: str 
         if supplier_name and supplier.name != supplier_name:
             supplier.name = supplier_name
             supplier.save(update_fields=["name", "modified"])
-        source_file = SourceFile(supplier=supplier, original_name=original_name, sha256=digest,
-                                 size=path.stat().st_size, file_type=file_type, uploaded_by=user)
-        with path.open("rb") as fh:
-            source_file.file.save(original_name, File(fh), save=False)
+        new_file = existing is None
+        source_file = existing or SourceFile(
+            supplier=supplier, original_name=original_name, sha256=digest,
+            size=path.stat().st_size, file_type=file_type, uploaded_by=user)
+        if new_file:
+            with path.open("rb") as fh:
+                source_file.file.save(original_name, File(fh), save=False)
         try:
-            source_file.save()
+            if new_file:
+                source_file.save()
             batch = ImportBatch.objects.create(
                 source_file=source_file, partial=partial, created_by=user,
                 ruleset_version=rules.matching()["version"],
                 mapping={"tables": parsed.mappings,
-                         "override": override.as_dict() if override else None},
+                         "override": override.as_dict() if override else None,
+                         "reprocessed": not new_file},
             )
             stats = _persist(batch, supplier, parsed, normalized, override, partial)
         except Exception:
-            source_file.file.delete(save=False)  # don't leave an orphan copy behind
+            if new_file:
+                source_file.file.delete(save=False)  # don't leave an orphan copy behind
             raise
     logger.info("import batch %s: %s", batch.pk, stats)
     return ImportResult(batch=batch, parse=parsed, stats=stats)
@@ -195,14 +239,15 @@ def _values(row: ParsedRow) -> dict:
 
 
 def _preview(supplier_code, parsed, normalized, existing_file) -> ImportResult:
-    known = {i.supplier_part_no: i for i in
+    known = {normalize_number(i.supplier_part_no): i for i in
              SupplierItem.objects.filter(supplier__code=supplier_code)}
     preview, counts, seen = [], Counter(), set()
     for row, rec in normalized:
-        item = known.get(rec.supplier_part_no)
-        if not rec.supplier_part_no:
+        key = normalize_number(rec.supplier_part_no)
+        item = known.get(key)
+        if not key:
             status = DIFF.INVALID
-        elif rec.supplier_part_no in seen:
+        elif key in seen:
             status = DIFF.DUPLICATE
         elif item is None:
             status = DIFF.NEW
@@ -210,7 +255,7 @@ def _preview(supplier_code, parsed, normalized, existing_file) -> ImportResult:
             status = DIFF.UNCHANGED
         else:
             status = DIFF.CONFLICT if catalog.changed_key_attrs(item, rec) else DIFF.UPDATED
-        seen.add(rec.supplier_part_no)
+        seen.add(key)
         counts[status.value] += 1
         preview.append({"locator": row.label, "part_no": rec.supplier_part_no, "status": status,
                         "category": rec.category, "position": rec.position,
@@ -225,7 +270,8 @@ def _preview(supplier_code, parsed, normalized, existing_file) -> ImportResult:
 def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
     counts = Counter()
     brand_default = (override.brand if override and override.brand else "")
-    items = {i.supplier_part_no: i for i in
+    # Identity is the normalized part number, so "A-03-L" and "A03L" are the same listing.
+    items = {normalize_number(i.supplier_part_no): i for i in
              SupplierItem.objects.filter(supplier=supplier).select_related("current_record")}
     seen: set[str] = set()
     for problem in parsed.problems:
@@ -234,11 +280,12 @@ def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
 
     for row, rec in normalized:
         part_no = rec.supplier_part_no
-        item = items.get(part_no)
+        key = normalize_number(part_no)
+        item = items.get(key)
         changed = {}
-        if not part_no:
+        if not key:
             status = DIFF.INVALID
-        elif part_no in seen:
+        elif key in seen:
             status = DIFF.DUPLICATE
         elif item is None:
             status = DIFF.NEW
@@ -265,14 +312,14 @@ def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
             issue_service.record_findings([Finding(
                 "DUPLICATE_KEY_IN_FILE", "error", "supplier_part_no",
                 f"编号 {part_no} 在同一文件中重复出现，以第一次出现的行为准",
-                {"first": items[part_no].current_record.locator_label})],
-                item=items[part_no], record=record, batch=batch)
+                {"first": items[key].current_record.locator_label})],
+                item=items[key], record=record, batch=batch)
             continue
-        seen.add(part_no)
+        seen.add(key)
 
         if status == DIFF.NEW:
             item = catalog.create_item(supplier, record, rec, brand)
-            items[part_no] = item
+            items[key] = item
             issue_service.record_findings(rec.findings, item=item, record=record, batch=batch)
         elif status == DIFF.UNCHANGED:
             if not item.present_in_latest:
@@ -282,6 +329,7 @@ def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
             item.present_in_latest = True
             item.save(update_fields=["current_record", "present_in_latest", "modified"])
         else:
+            old_part_no = item.supplier_part_no
             catalog.update_item(item, record, rec, brand)
             issue_service.resolve_item_issues(
                 item, exclude_record=record, note=f"被批次 #{batch.pk} 的新资料取代")
@@ -292,11 +340,17 @@ def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
                     "关键属性变化：" + "；".join(
                         f"{k}: {v['old']} → {v['new']}" for k, v in changed.items()),
                     {"changes": changed})], item=item, record=record, batch=batch)
+            if old_part_no != part_no:
+                issue_service.record_findings([Finding(
+                    "PART_NO_FORMAT_CHANGED", "info", "supplier_part_no",
+                    f"编号写法由 {old_part_no} 变为 {part_no}，按同一条目处理（旧写法保留在历史中）",
+                    {"old": old_part_no, "new": part_no})], item=item, record=record, batch=batch)
 
     missing = []
     if not partial:
-        for part_no, item in items.items():
-            if part_no not in seen and item.present_in_latest:
+        for key, item in items.items():
+            if key not in seen and item.present_in_latest:
+                part_no = item.supplier_part_no
                 item.present_in_latest = False
                 item.save(update_fields=["present_in_latest", "modified"])
                 issue_service.open_item_issue(

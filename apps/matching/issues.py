@@ -56,3 +56,34 @@ def open_batch_problem(batch, problem: dict) -> Issue:
         batch=batch, code="UNPARSEABLE", severity=Issue.Severity.ERROR, field="",
         message=problem["message"], details={"locator": problem.get("locator", {})},
     )
+
+
+SYSTEM_NOTE = "[系统] 重新计算后不再适用"
+
+
+def sync_system_findings(items: dict, findings: dict, *, codes) -> None:
+    """Keep engine-computed issues in step with the latest run.
+
+    Open the ones that apply now (reopening only those the system closed itself), and close
+    the ones that no longer apply. Issues a reviewer resolved or ignored are left alone.
+    """
+    wanted = {(item_id, f.code) for item_id, fs in findings.items() for f in fs}
+    for item_id, fs in findings.items():
+        item = items[item_id]
+        for f in fs:
+            issue, created = Issue.objects.get_or_create(
+                source_record=item.current_record, code=f.code, field=f.field,
+                defaults={"item": item, "severity": f.severity, "message": f.message,
+                          "details": f.details})
+            if not created and (issue.message != f.message or (
+                    issue.status == Issue.Status.RESOLVED and issue.resolution_note == SYSTEM_NOTE)):
+                issue.message, issue.details = f.message, f.details
+                if issue.resolution_note == SYSTEM_NOTE:
+                    issue.status, issue.resolution_note = Issue.Status.OPEN, ""
+                issue.save()
+    for issue in Issue.objects.filter(code__in=codes, status=Issue.Status.OPEN):
+        item = items.get(issue.item_id)
+        stale_row = item is not None and issue.source_record_id != item.current_record_id
+        if (issue.item_id, issue.code) not in wanted or stale_row:
+            issue.status, issue.resolution_note = Issue.Status.RESOLVED, SYSTEM_NOTE
+            issue.save(update_fields=["status", "resolution_note", "modified"])
