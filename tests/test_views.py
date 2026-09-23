@@ -61,3 +61,25 @@ def test_original_download(client, staff, imported, item):
     source = item("A-001").current_record.batch.source_file
     resp = client.get(f"/sources/{source.pk}/download/")
     assert resp.status_code == 200
+
+
+def test_upload_via_web(client, staff):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.catalog.models import SupplierItem
+
+    from .conftest import FILE_A
+
+    upload = SimpleUploadedFile(FILE_A.name, FILE_A.read_bytes())
+    resp = client.post("/imports/", {"file": upload, "supplier": "A"})
+    assert resp.status_code == 302, resp.context["form"].errors if resp.context else resp
+    assert SupplierItem.objects.filter(supplier__code="A").count() == 27
+
+
+def test_upload_rejects_xls_with_hint(client, staff):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    resp = client.post("/imports/", {"file": SimpleUploadedFile("old.xls", b"\xd0\xcf\x11\xe0"),
+                                     "supplier": "X"})
+    assert resp.status_code == 200
+    assert "另存为 .xlsx" in str(resp.context["form"].errors)

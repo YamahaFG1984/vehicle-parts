@@ -5,14 +5,12 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db import connection, transaction
 
-from apps.catalog.models import FieldValue, PartNumber, Product, SupplierItem, SupplierOffer
+from apps.catalog.models import SupplierItem
+from apps.core.reset import reset_business_data
 from apps.exports.exporters import export_all
-from apps.ingestion.models import ImportBatch, SourceFile, SourceRecord, Supplier
 from apps.ingestion.services import import_source
 from apps.matching.engine import run_matching
-from apps.matching.models import Issue, MatchCandidate, ReviewDecision
 
 BASE = [("候选人材料_供应商A报价表.xlsx", "A", "供应商A"),
         ("候选人材料_供应商B报价表.xlsx", "B", "供应商B")]
@@ -50,17 +48,8 @@ class Command(BaseCommand):
         if opts["reviewer"]:
             self.make_reviewer(opts["reviewer"], opts["password"])
 
-    @transaction.atomic
     def reset(self):
-        files = [sf.file for sf in SourceFile.objects.all()]
-        models = (ReviewDecision, Issue, MatchCandidate, SupplierOffer, PartNumber, FieldValue,
-                  SupplierItem, Product, SourceRecord, ImportBatch, SourceFile, Supplier)
-        tables = ", ".join(connection.ops.quote_name(m._meta.db_table) for m in models)
-        with connection.cursor() as cursor:  # restart ids so product codes begin at P-000001
-            cursor.execute(f"TRUNCATE {tables} RESTART IDENTITY CASCADE")
-        # Demo reset only: in normal operation archived originals are never deleted.
-        for f in files:
-            f.delete(save=False)
+        reset_business_data()
         self.stdout.write("已清空业务数据")
 
     def make_reviewer(self, username, password):

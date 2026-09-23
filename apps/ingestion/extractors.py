@@ -39,7 +39,8 @@ def detect_file_type(path: Path) -> str:
         return "csv"
     if suffix == ".pdf":
         return "pdf"
-    raise ExtractionError(f"不支持的文件类型：{path.suffix}（支持 .xlsx / .csv / .pdf）")
+    hint = "；旧版 .xls 请先在 Excel 中另存为 .xlsx" if suffix == ".xls" else ""
+    raise ExtractionError(f"不支持的文件类型：{path.suffix or '（无扩展名）'}（支持 .xlsx / .csv / .pdf{hint}）")
 
 
 def extract(path: Path, file_type: str) -> ExtractionResult:
@@ -53,22 +54,29 @@ def _is_blank(cells) -> bool:
 def extract_xlsx(path: Path) -> ExtractionResult:
     from openpyxl import load_workbook
 
+    # Open by content (file handle), so a missing or odd extension does not matter.
+    handle = path.open("rb")
     try:
-        wb = load_workbook(path, read_only=True, data_only=True)
-    except Exception as exc:  # openpyxl raises many types for corrupt files
-        raise ExtractionError(f"无法打开 Excel 文件：{exc}") from exc
-    tables = []
-    try:
-        for ws in wb.worksheets:
-            table = RawTable(name=ws.title)
-            for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
-                cells = list(row)
-                if _is_blank(cells):
-                    continue
-                table.rows.append(RawRow({"sheet": ws.title, "row": idx}, cells))
-            tables.append(table)
+        try:
+            wb = load_workbook(handle, read_only=True, data_only=True)
+        except Exception as exc:  # openpyxl raises many types for corrupt files
+            raise ExtractionError(
+                f"无法打开 Excel 文件（请确认是 .xlsx 格式；旧版 .xls 请先在 Excel 中另存为 .xlsx）：{exc}"
+            ) from exc
+        tables = []
+        try:
+            for ws in wb.worksheets:
+                table = RawTable(name=ws.title)
+                for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+                    cells = list(row)
+                    if _is_blank(cells):
+                        continue
+                    table.rows.append(RawRow({"sheet": ws.title, "row": idx}, cells))
+                tables.append(table)
+        finally:
+            wb.close()
     finally:
-        wb.close()
+        handle.close()
     return ExtractionResult(tables)
 
 

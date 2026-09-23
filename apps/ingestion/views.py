@@ -19,7 +19,8 @@ def batch_list(request):
     if request.method == "POST" and form.is_valid():
         upload = form.cleaned_data["file"]
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "upload"
+            # Keep the original extension: file type detection and readers rely on it.
+            path = Path(tmp) / f"upload{Path(upload.name).suffix.lower()}"
             with path.open("wb") as fh:
                 for chunk in upload.chunks():
                     fh.write(chunk)
