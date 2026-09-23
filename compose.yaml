@@ -1,0 +1,38 @@
+# 服务器部署：docker compose up -d --build
+# 本机开发不需要启动本文件，直接 `uv run python manage.py runserver` 连接已有 PostgreSQL 即可。
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-vehicle_parts}
+      POSTGRES_USER: ${POSTGRES_USER:-vehicle_parts}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      DATABASE_URL: postgres://${POSTGRES_USER:-vehicle_parts}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-vehicle_parts}
+      DJANGO_MEDIA_ROOT: /app/media
+      VP_EXPORT_DIR: /app/exports
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      - media:/app/media   # 原始文件归档：必须与数据库一起备份
+
+volumes:
+  pgdata:
+  media:

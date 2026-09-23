@@ -1,0 +1,37 @@
+# 匹配规则参数。修改后请提升 version，并运行 `python manage.py run_matching --all [--dry-run]`。
+version: "2026.09-1"
+
+weights:          # 字段相等时的得分；confidence = 得分 / 双方都有值字段的权重和
+  oe: 40
+  category: 20
+  fitment: 15
+  dims: 15
+  position: 10
+  name: 5         # 名称相似度 × 权重，仅作弱证据
+
+dims_tolerance_cm: 1.0      # 排序后逐维差值容差
+min_oe_length: 5            # 规范化后短于此长度的 OE 号不参与候选生成
+conflict_confidence_cap: 0.3  # 存在硬冲突时置信度上限
+hard_conflict_fields: [category, fitment, dims, position]
+
+auto_confirm:
+  enabled: true
+  require_shared_oe: true
+  required_equal: [category, fitment, dims]   # 位置需 equal 或 n/a
+  allow_same_supplier: false                  # 同供应商两个编号永不自动合并
+
+blocking:
+  oe: true
+  category_fitment: true
+  dims: true
+
+normalization:
+  sku_position_suffix: true   # 编号以 L/R/LH/RH 结尾（前面是数字或分隔符）时作为位置证据之一
+
+# 疑似队列优先级（数字越小越靠前）
+priority:
+  SHARED_OE_CONFLICT: 1
+  SHARED_OE_INCOMPLETE: 2
+  OE_DIFFER: 3
+  NO_OE_ATTR_MATCH: 4
+  SAME_SUPPLIER_DUP: 5

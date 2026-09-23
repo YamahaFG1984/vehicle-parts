@@ -1,0 +1,7 @@
+<div class="box">
+  <h2 style="margin-top:0">{{ label }} · <a href="{% url 'catalog:item_detail' it.pk %}">{{ it }}</a></h2>
+  <p>{{ it.name }}<br>产品 <a href="{% url 'catalog:product_detail' it.product.code %}">{{ it.product.code }}</a> · 原始记录 {{ it.source_ref|default:"—" }}</p>
+  <p class="mono muted">{{ it.current_record.locator_label }}</p>
+  <pre class="raw">{% for k, v in it.current_record.raw_data %}{{ k }}: {{ v }}
+{% endfor %}</pre>
+</div>

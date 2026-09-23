@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>概览</h1>
+<div class="cards">
+  <div class="card"><div class="n">{{ item_count }}</div><div class="l">供应商条目</div></div>
+  <div class="card"><div class="n">{{ product_count }}</div><div class="l">归一产品</div></div>
+  <div class="card"><div class="n">{{ states.已确认归一 }}</div><div class="l"><a href="{% url 'catalog:search' %}?state=已确认归一">已确认归一（多成员）</a></div></div>
+  <div class="card"><div class="n">{{ pending }}</div><div class="l"><a href="{% url 'matching:review_queue' %}">疑似重复待确认</a></div></div>
+  <div class="card"><div class="n">{{ states.独立产品 }}</div><div class="l"><a href="{% url 'catalog:search' %}?state=独立产品">独立产品</a></div></div>
+  <div class="card"><div class="n">{{ states.待补充 }}</div><div class="l"><a href="{% url 'catalog:search' %}?state=待补充">待补充</a></div></div>
+  <div class="card"><div class="n">{{ open_issues }}</div><div class="l"><a href="{% url 'matching:issue_list' %}">未处理异常</a></div></div>
+</div>
+
+<h2>导出</h2>
+<p>
+  <a class="btn" href="{% url 'exports:download' 'master' %}">主数据</a>
+  <a class="btn" href="{% url 'exports:download' 'offers' %}">供应商报价</a>
+  <a class="btn" href="{% url 'exports:download' 'review' %}">待人工确认清单</a>
+  <a class="btn" href="{% url 'exports:download' 'report' %}">导入报告</a>
+</p>
+
+<h2>供应商</h2>
+<p>{% for s in by_supplier %}<a class="tag info" href="{% url 'catalog:search' %}?supplier={{ s.supplier__code }}">{{ s.supplier__code }} · {{ s.supplier__name }} · {{ s.n }} 条</a> {% endfor %}</p>
+
+<h2>最近导入</h2>
+{% include "ingestion/_batch_table.html" %}
+{% endblock %}

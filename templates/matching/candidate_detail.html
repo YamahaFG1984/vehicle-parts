@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load vp %}
+{% block title %}候选 #{{ cand.pk }} · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>候选 #{{ cand.pk }}：{{ cand.item_a }} ↔ {{ cand.item_b }}</h1>
+<p>{{ cand.get_classification_display }} · <strong>{{ cand.get_status_display }}</strong>
+{% if cand.decided_by == "human" %}<span class="tag info">人工决定</span>{% else %}<span class="tag">规则 {{ cand.ruleset_version }}</span>{% endif %}
+· 置信度 {{ cand.confidence }} · 得分 {{ cand.score }}</p>
+
+<div class="box">
+<p><strong>触发原因：</strong>{% for code, label in reasons %}<span class="tag {% if code == 'SHARED_OE_CONFLICT' or code == 'CLUSTER_CONFLICT' %}bad{% else %}warn{% endif %}">{{ label }}</span> {% endfor %}</p>
+{% if hard %}<p><strong>硬冲突字段：</strong>{% for c in hard %}<span class="tag bad">{{ c.field|field_label }}</span> {% endfor %}（确认合并需填写理由）</p>{% endif %}
+<p><strong>缺失信息：</strong>{{ missing|join:"、"|default:"—" }}</p>
+<p><strong>建议动作：</strong>{{ cand.suggested_action }}</p>
+</div>
+
+<h2>字段比较</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>字段</th><th>结果</th><th>{{ cand.item_a }}</th><th>{{ cand.item_b }}</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr class="r-{{ r.result }}"><td>{{ r.field }}</td>
+<td>{% if r.result == "similarity" %}相似度 {{ r.similarity }}{% else %}{{ r.result }}{% endif %}</td>
+<td class="mono">{{ r.a|show }}</td><td class="mono">{{ r.b|show }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<div class="grid2">
+{% include "matching/_item_card.html" with it=cand.item_a label="A" %}
+{% include "matching/_item_card.html" with it=cand.item_b label="B" %}
+</div>
+
+<h2>人工决定</h2>
+<form class="box" method="post">{% csrf_token %}
+  {{ form.non_field_errors }}
+  {{ form.action.errors }}
+  <ul class="radio">{% for radio in form.action %}<li>{{ radio }}</li>{% endfor %}</ul>
+  {{ form.note.errors }}
+  <p><label>备注<br>{{ form.note }}</label></p>
+  <button type="submit">提交决定</button>
+  <span class="muted">提交后自动重新聚类；已合并的关系选“不是同一产品”即为拆分。</span>
+</form>
+
+<h2>审计记录</h2>
+<div class="table-wrap"><table><thead><tr><th>时间</th><th>动作</th><th>人</th><th>渠道</th><th>备注</th></tr></thead><tbody>
+{% for d in decisions %}<tr><td class="muted">{{ d.created|date:"Y-m-d H:i:s" }}</td><td>{{ d.get_action_display }}</td><td>{{ d.actor_name|default:"系统" }}</td><td>{{ d.get_via_display }}</td><td>{{ d.note }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

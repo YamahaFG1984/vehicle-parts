@@ -1,0 +1,1 @@
+{% if state == "已确认归一" %}<span class="tag ok">已确认归一</span>{% elif state == "待补充" %}<span class="tag bad">待补充</span>{% else %}<span class="tag">独立产品</span>{% endif %}{% if has_open %} <span class="tag warn">有疑似待确认</span>{% endif %}

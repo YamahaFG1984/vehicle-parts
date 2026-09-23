@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load vp %}
+{% block title %}{{ product.code }} · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>{{ product.code }} {% include "catalog/_state.html" %}</h1>
+<p class="muted">{{ product.category }} {{ product.position }} · {{ product.fitment_label }} · {{ product.dims_label }}</p>
+
+<h2>成员属性（逐成员对照）</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>字段</th><th>取值</th><th>成员一致</th></tr></thead>
+<tbody>
+{% for field, v in product.attr_consensus.items %}
+<tr><td>{{ field|field_label }}</td><td>{{ v.values|join:" / "|default:"—" }}</td>
+<td>{% if v.agreed %}<span class="tag ok">一致</span>{% else %}<span class="tag bad">不一致</span>{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+
+<h2>品牌号 / 供应商资料 / 分别报价</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>供应商</th><th>编号</th><th>原始名称</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>OE</th><th>当前报价</th><th>MOQ</th><th>报价日期</th><th>来源</th></tr></thead>
+<tbody>
+{% for m in members %}
+{% with offer=m.current_offer %}
+<tr>
+  <td>{{ m.supplier.name }}</td>
+  <td><a href="{% url 'catalog:item_detail' m.pk %}">{{ m.supplier_part_no }}</a>{% if not m.present_in_latest %} <span class="tag warn">最新文件未出现</span>{% endif %}</td>
+  <td>{{ m.name }}</td><td>{{ m.position }}</td><td>{{ m.fitment_label }}</td><td class="mono">{{ m.dims_label }}</td>
+  <td class="mono">{% for pn in m.part_numbers.all %}{% if pn.kind == "oe" %}{{ pn.number_raw }} {% endif %}{% endfor %}</td>
+  <td>{% if offer.price is not None %}{{ offer.price|floatformat:2 }} {{ offer.currency }}{% else %}<span class="tag bad">缺失</span>{% endif %}</td>
+  <td>{{ offer.moq|default_if_none:"—" }}</td><td>{{ offer.quote_date|default_if_none:"—" }}</td>
+  <td class="mono muted">{{ m.current_record.locator_label }}</td>
+</tr>
+{% endwith %}
+{% endfor %}
+</tbody></table></div>
+<p class="muted">报价按原币种保存，不做换算；历史报价见各条目详情。</p>
+
+<h2>归一依据（已合并的关系）</h2>
+{% if internal %}
+<div class="table-wrap"><table><thead><tr><th>#</th><th>关系</th><th>决定</th><th>原因</th><th>操作</th></tr></thead><tbody>
+{% for e in internal %}
+<tr><td><a href="{% url 'matching:candidate_detail' e.pk %}">{{ e.pk }}</a></td>
+<td>{{ e.item_a }} ↔ {{ e.item_b }}</td>
+<td>{% if e.decided_by == "human" %}<span class="tag info">人工确认</span>{% else %}<span class="tag ok">规则</span>{% endif %}</td>
+<td>{{ e.reasons|join:", " }}</td>
+<td><a href="{% url 'matching:candidate_detail' e.pk %}">查看 / 拆分</a></td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">单成员产品。</p>{% endif %}
+
+{% if external %}
+<h2>待确认的疑似关系</h2>
+<div class="table-wrap"><table><thead><tr><th>#</th><th>关系</th><th>对方产品</th><th>原因</th><th>置信度</th></tr></thead><tbody>
+{% for e in external %}
+<tr><td><a href="{% url 'matching:candidate_detail' e.pk %}">{{ e.pk }}</a></td><td>{{ e.item_a }} ↔ {{ e.item_b }}</td>
+<td>{% if e.item_a.product_id == product.pk %}<a href="{% url 'catalog:product_detail' e.item_b.product.code %}">{{ e.item_b.product.code }}</a>{% else %}<a href="{% url 'catalog:product_detail' e.item_a.product.code %}">{{ e.item_a.product.code }}</a>{% endif %}</td>
+<td>{{ e.reasons|join:", " }}</td><td>{{ e.confidence }}</td></tr>
+{% endfor %}</tbody></table></div>
+{% endif %}
+
+{% if issues %}
+<h2>未处理异常</h2>
+<ul>{% for i in issues %}<li><span class="tag {% if i.severity == 'error' %}bad{% elif i.severity == 'warning' %}warn{% endif %}">{{ i.code }}</span> {{ i.item }}：{{ i.message }}</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

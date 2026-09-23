@@ -1,0 +1,43 @@
+[project]
+name = "vehicle-parts"
+version = "0.1.0"
+description = "供应商零件资料的可追溯归档与归一化 Demo"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2,<5.3",
+    "psycopg[binary]>=3.2",
+    "django-environ>=0.11",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "pyyaml>=6.0",
+    "rapidfuzz>=3.9",
+    "gunicorn>=23.0",
+    "whitenoise>=6.12.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "ruff>=0.6",
+    "reportlab>=4.2",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q --reuse-db"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ"]
+# 中文提示字符串较长，行宽交由评审把关
+ignore = ["E501"]

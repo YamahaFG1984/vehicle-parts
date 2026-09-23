@@ -1,0 +1,36 @@
+# 名称 → 类别 的同义短语（小写，按“词”匹配，取最长短语）。
+# sided: true 表示该类别有左右之分，缺少位置会被标记为 MISSING_POSITION。
+# 新增品类或写法：在这里添加后运行 `python manage.py run_matching --all`。
+categories:
+  front_grille:
+    label: Front Grille
+    sided: false
+    phrases: [front grille, front grill, radiator grille, grille assembly]
+  side_grille:
+    label: Side Grille
+    sided: true
+    phrases: [side grille, side grill, side air intake grille]
+  bug_screen:
+    label: Bug Screen
+    sided: false
+    phrases: [bug screen, bug deflector screen, insect screen]
+  fan_shroud:
+    label: Fan Shroud
+    sided: false
+    phrases: [fan shroud, radiator fan shroud, radiator shroud]
+  air_filter_housing:
+    label: Air Filter Housing
+    sided: false
+    phrases: [air filter housing, air cleaner housing, air filter body]
+  air_filter_housing_cap:
+    label: Air Filter Housing Cap
+    sided: false
+    phrases: [air filter housing cap, air filter cap, air cleaner cap, air cleaner housing cap, air filter housing cover]
+
+# 位置词（名称、位置列通用）
+positions:
+  left: [left, lh, l h, driver, driver side, 左, 左侧]
+  right: [right, rh, r h, passenger, passenger side, 右, 右侧]
+
+# 车型品牌词表（最长匹配）；其后到年份前为车型
+makes: [Volvo, Freightliner, Kenworth, Peterbilt, International, Mack, Western Star, Navistar, Hino, Isuzu]

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分步实施 · 零件资料归一化</title>
+<meta name="description" content="从环境搭建到演示的分步实施文档，以及部署与维护说明。">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+  <a class="brand" href="index.html">零件资料归一化 Demo</a>
+  <a class="nav" href="index.html">首页</a>
+  <a class="nav" href="prd.html">PRD</a>
+  <a class="nav" href="design.html">设计文档</a>
+  <a class="nav" href="implementation.html" aria-current="page">分步实施</a>
+  <button class="theme-toggle" type="button">明/暗</button>
+</div></header>
+
+<div class="layout">
+<nav class="toc" aria-label="目录">
+  <p>目录</p>
+  <ol>
+    <li><a href="#env">环境准备</a></li>
+    <li><a href="#steps">实施步骤</a>
+      <ol>
+        <li><a href="#s0">0 文档</a></li>
+        <li><a href="#s1">1 脚手架</a></li>
+        <li><a href="#s2">2 模型</a></li>
+        <li><a href="#s3">3 归一化器</a></li>
+        <li><a href="#s4">4 导入</a></li>
+        <li><a href="#s5">5 匹配</a></li>
+        <li><a href="#s6">6 导出与回写</a></li>
+        <li><a href="#s7">7 页面</a></li>
+        <li><a href="#s8">8 演示</a></li>
+      </ol></li>
+    <li><a href="#demo">演示脚本</a></li>
+    <li><a href="#deploy">部署</a></li>
+    <li><a href="#ops">维护手册</a></li>
+    <li><a href="#live">现场新资料</a></li>
+  </ol>
+</nav>
+
+<main>
+<h1>分步实施文档</h1>
+<p class="subtitle">每一步都有产出、命令与完成标准（DoD）。步骤之间单向依赖，可逐步提交。</p>
+
+<h2 id="env">环境准备</h2>
+<h3>本机开发</h3>
+<p>本机不单独启动数据库容器，在已有的 PostgreSQL 16 实例中建独立的库与角色：</p>
+<pre><code># 1) 在已有 PG 实例中建库（示例：容器 tpdc-db-1，映射到 127.0.0.1:5441）
+docker exec -i tpdc-db-1 psql -U tpdc -d postgres \
+  -v pw=改成你的密码 &lt; scripts/create_db.sql
+
+# 2) Python 依赖
+uv sync
+
+# 3) 配置
+cp .env.example .env
+#   DATABASE_URL=postgres://vehicle_parts:密码@127.0.0.1:5441/vehicle_parts
+#   DJANGO_SETTINGS_MODULE=config.settings.local
+
+# 4) 初始化
+uv run python manage.py migrate
+uv run python manage.py createsuperuser   # 或 demo --reviewer 名字 --password 密码</code></pre>
+<p>Python 3.12+（uv 会按锁文件准备环境；Docker 镜像使用 3.13）。<code>scripts/create_db.sql</code> 创建角色 <code>vehicle_parts</code>（带 <code>CREATEDB</code>，供测试建临时库）与同名数据库，幂等可重复执行。</p>
+
+<h3>服务器</h3>
+<p>见 <a href="#deploy">部署</a>：<code>compose.yaml</code> 自带 <code>db</code> 与 <code>web</code> 两个服务。</p>
+
+<h2 id="steps">实施步骤</h2>
+
+<section class="step" id="s0">
+<h3>步骤 0 · 文档先行</h3>
+<p><strong>产出</strong>：<code>docs/index.html</code>、<code>prd.html</code>、<code>design.html</code>、<code>implementation.html</code>、<code>assets/</code>、<code>.nojekyll</code>。</p>
+<p><strong>DoD</strong>：<code>python -m http.server -d docs</code> 打开后导航、SVG 图、窄屏、深色模式均正常；全部为相对链接。</p>
+</section>
+
+<section class="step" id="s1">
+<h3>步骤 1 · 项目脚手架</h3>
+<p><strong>产出</strong>：<code>pyproject.toml</code> / <code>uv.lock</code>、<code>manage.py</code>、<code>config/settings/{base,local,test,production}.py</code>、<code>config/urls.py</code>、<code>apps/core</code>（自定义 User、TimeStampedModel）、<code>.env.example</code>、<code>scripts/create_db.sql</code>、<code>Dockerfile</code>、<code>compose.yaml</code>、<code>.dockerignore</code>、<code>.gitignore</code>、pytest 配置。</p>
+<pre><code>uv run python manage.py check
+uv run pytest            # 空测试集可运行
+docker compose config -q # 仅校验语法</code></pre>
+<p><strong>DoD</strong>：<code>check</code> 无错误；<code>check --deploy</code>（production 设置）只剩 HTTPS 相关、可由环境变量开启的提示；能连上数据库；compose 配置合法。</p>
+</section>
+
+<section class="step" id="s2">
+<h3>步骤 2 · 数据模型与迁移</h3>
+<p><strong>产出</strong>：ingestion / catalog / matching 三个 app 的模型、约束、索引；启用 <code>pg_trgm</code> 的迁移（<code>TrigramExtension</code>）；Admin 注册（只读为主）。</p>
+<pre><code>uv run python manage.py makemigrations
+uv run python manage.py migrate
+uv run python manage.py makemigrations --check --dry-run   # 无遗漏</code></pre>
+<p><strong>DoD</strong>：迁移可在空库上从头执行；约束（唯一键、item_a &lt; item_b、price ≥ 0、is_current 部分唯一）有测试覆盖。</p>
+</section>
+
+<section class="step" id="s3">
+<h3>步骤 3 · 归一化器（先写测试）</h3>
+<p><strong>产出</strong>：<code>apps/catalog/normalizers.py</code>、<code>config/rules/synonyms.yaml</code>、<code>tests/test_normalizers.py</code>。</p>
+<p>测试用例直接取自样本中的每类陷阱：</p>
+<ul>
+  <li><code>Air Filter Housing Cap</code> ≠ <code>Air Filter Housing</code>；<code>Side Grille, Left side</code> = <code>Left Side Grille</code>；<code>Side Grille</code> + Right 列 + <code>B41R</code> → right。</li>
+  <li><code>Volvo VN</code> ≠ <code>Volvo VNL</code>；<code>Volvo VN</code> 缺年份不算冲突；<code>Freightliner Cascadia P3</code> 车型为 Cascadia P3。</li>
+  <li><code>1220 x 750 x 70 mm</code> == <code>122 x 75 x 7 cm</code>；<code>86 x 36 x 56</code> 与 <code>56 x 36 x 86</code> 排序后相等。</li>
+  <li>位置三来源不一致 → POSITION_INCONSISTENT 且位置为未知。</li>
+</ul>
+<p><strong>DoD</strong>：<code>uv run pytest tests/test_normalizers.py</code> 全绿；归一化器不依赖数据库。</p>
+</section>
+
+<section class="step" id="s4">
+<h3>步骤 4 · 导入管线</h3>
+<p><strong>产出</strong>：<code>apps/ingestion/extractors.py</code>（xlsx/csv/pdf）、<code>mapping.py</code>（表头识别、别名、映射文件）、<code>services.py</code>（归档 → 提取 → 映射 → 归一化 → 增量比对 → 写条目/来源/报价/编号/Issue）、命令 <code>import_source</code>、<code>config/rules/column_aliases.yaml</code>。</p>
+<pre><code>uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx --supplier A --dry-run
+uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx --supplier A
+uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx --supplier A   # 再次 → duplicate</code></pre>
+<p><strong>DoD</strong>：A 27 条、B 26 条；每个字段有 FieldValue 与定位；重复导入无副作用；原件 sha256 不变；异常列表与 PRD 第 7 节一致；导入失败时整个批次回滚。</p>
+</section>
+
+<section class="step" id="s5">
+<h3>步骤 5 · 匹配引擎与聚类</h3>
+<p><strong>产出</strong>：<code>apps/matching/rules.py</code>（加载 YAML、字段比较、分类、原因码、建议动作）、<code>engine.py</code>（blocking、候选落库与人工决定保护、并查集聚类与防传递、以簇为节点去重、产品编号稳定）、<code>issues.py</code>、<code>services.py</code>（人工决定）、命令 <code>run_matching [--all] [--dry-run]</code>、<code>config/rules/matching.yaml</code>。</p>
+<p><strong>DoD</strong>：端到端测试 <code>tests/test_samples_e2e.py</code> 断言 <a href="design.html#samples">设计文档 5.5</a> 的每一行；重跑匹配结果稳定（幂等）；人工否决后重跑不再提出，改动一方资料后重新打开。</p>
+</section>
+
+<section class="step" id="s6">
+<h3>步骤 6 · 导出与复核回写</h3>
+<p><strong>产出</strong>：<code>apps/exports/</code>：<code>export_data --out exports/</code> 生成 master_data / supplier_offers / review_list / import_report 四个 xlsx；<code>import_review 文件</code> 回写决定。</p>
+<p><strong>DoD</strong>：每个导出行都带来源定位列（如 <code>候选人材料_供应商A报价表.xlsx!报价明细!R14</code>）；回写对非法值逐行报错且整体不提交；回写后审计日志 via=xlsx。</p>
+</section>
+
+<section class="step" id="s7">
+<h3>步骤 7 · 页面与 Admin</h3>
+<p><strong>产出</strong>：概览 <code>/</code>、<code>/search/</code>、<code>/products/&lt;code&gt;/</code>、<code>/items/&lt;id&gt;/</code>（字段来源、报价历史、每次导入的原始行）、<code>/review/</code> 与候选详情（字段对照 + 决定表单）、<code>/review/issues/</code>（异常处理）、<code>/imports/</code>（网页上传导入）、<code>/exports/&lt;key&gt;/</code>、<code>/sources/&lt;id&gt;/download/</code>、Admin（证据只读，候选可批量决定）。全站需登录。</p>
+<p><strong>DoD</strong>：搜 <code>OE-VNL-1001</code>、<code>oevnl1001</code>、<code>B03L</code>、<code>grille</code>、<code>Volvo</code>、供应商 <code>B</code> 均有结果；视图测试覆盖 200/302/403 与表单提交。</p>
+</section>
+
+<section class="step" id="s8">
+<h3>步骤 8 · 演示素材、一键演示与文档收尾</h3>
+<p><strong>产出</strong>：命令 <code>make_demo_samples</code>（生成 <code>samples/demo/供应商A报价表_v2.xlsx</code> 与 <code>samples/demo/供应商C目录.pdf</code>）、<code>demo [--with-increment]</code>、README；导出结果复制到 <code>docs/samples/</code>；文档按实现回填。</p>
+<p>A v2 相对原表：A-001 调价、A-002 改 MOQ、A-003 调价与日期（UPDATED ×3）；A-006 尺寸变化（CONFLICT，原自动归一被重新打开）；新增 A-028（同 OE 同属性 → 同供应商疑似）、A-029（与 B-018 无 OE 属性一致 → 疑似）、A-030（未知类别 → 待补充）；删除 A-027（NOT_IN_LATEST）。</p>
+<p>C 的 PDF：两页（第 2 页续表无表头，沿用第 1 页）、不同表头写法（Part # / OEM # / Carton Dimensions…）、含品牌列；含 mm 单位尺寸、只有 <code>$</code> 的价格、CAD 币种、同义名称 “Air Cleaner Housing”、与已有 OE 对应但左右相反的记录、只写 “Grille” 的模糊名称、同一编号在文件中出现两次。</p>
+<p>实际结果见 <a href="design.html#increment-result">设计文档 5.6</a>。</p>
+<p><strong>DoD</strong>：<code>uv run pytest</code> 全绿；<code>demo --with-increment</code> 从空库跑通并生成四个导出文件。</p>
+</section>
+
+<h2 id="demo">演示脚本</h2>
+<ol>
+  <li><code>uv run python manage.py demo --reviewer reviewer --password …</code>：清空业务数据 → 导入 A、B → 匹配 → 导出，并创建复核账号。讲解导入报告与异常。</li>
+  <li><code>runserver</code>，搜索 <code>OE-VNL-1001</code> → 产品详情：两个品牌号、两条报价（USD/USD、不同 MOQ）→ 点开尺寸字段看来源。</li>
+  <li>复核队列：打开 OE-SHARED-01 候选，展示冲突字段与建议动作 → “不是同一产品”；打开 A-013 候选 → “确认合并”，A-013 并入 A-001 所在产品；再到产品页演示“拆分”。</li>
+  <li><code>import_source samples/demo/供应商A报价表_v2.xlsx --supplier A</code>：展示 UPDATED / CONFLICT / NEW / NOT_IN_LATEST；A-006 的产品被拆分并出现在复核队列。</li>
+  <li><code>import_source samples/demo/供应商C目录.pdf --supplier C</code>：PDF 页码定位、mm 换算、币种推断。</li>
+  <li><code>export_data</code>：打开 review_list.xlsx，填写 decision 后 <code>import_review</code> 回写。</li>
+</ol>
+
+<h2 id="deploy">部署</h2>
+<h3>Docker Compose（服务器）</h3>
+<pre><code>cp .env.example .env     # 设置 DJANGO_SECRET_KEY、POSTGRES_PASSWORD、DJANGO_ALLOWED_HOSTS
+docker compose up -d --build
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py demo --with-increment   # 可选：演示数据</code></pre>
+<ul>
+  <li><code>db</code>：postgres:16，数据卷 <code>pgdata</code>，healthcheck 就绪后才启动 web。</li>
+  <li><code>web</code>：python:3.12-slim + uv 安装锁定依赖；入口脚本执行 <code>migrate</code>、<code>collectstatic</code> 后启动 gunicorn；<code>media</code> 卷保存原件归档。</li>
+  <li>备份：同时备份 <code>pgdata</code> 与 <code>media</code> 卷（原件与数据库必须一致）。</li>
+  <li>未配置 HTTPS 时在 <code>.env</code> 设 <code>DJANGO_SECURE_COOKIES=false</code>；配置 HTTPS 后可开启 <code>DJANGO_SSL_REDIRECT</code> 与 <code>DJANGO_HSTS_SECONDS</code>。</li>
+</ul>
+<h3>GitHub Pages（本文档）</h3>
+<ol>
+  <li>推送到 GitHub；仓库 Settings → Pages → Source 选 <em>Deploy from a branch</em>，分支 <code>main</code>，目录 <code>/docs</code>。</li>
+  <li><code>docs/.nojekyll</code> 已存在，静态文件原样发布；无需构建。</li>
+</ol>
+
+<h2 id="ops">维护手册</h2>
+<h3>接入新供应商 / 新文件</h3>
+<pre><code>uv run python manage.py import_source 新文件.xlsx --supplier D --supplier-name "供应商D" --dry-run
+# 查看：识别到的表头行、列 → 字段映射、未识别列、将产生的异常
+# 如有未识别列：在 config/rules/column_aliases.yaml 补别名，或写 mapping.yaml：
+#   sheet: Sheet1
+#   header_row: 3
+#   columns: {"Mfr Part": supplier_part_no, "Desc": name, "Fits": fitment}
+uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapping.yaml</code></pre>
+<h3>调整规则</h3>
+<ol>
+  <li>修改 <code>config/rules/matching.yaml</code>（权重、容差、自动确认条件）或 <code>synonyms.yaml</code>，提升 <code>version</code>。</li>
+  <li><code>run_matching --all --dry-run</code> 查看分类变化摘要。</li>
+  <li><code>run_matching --all</code> 正式执行；人工决定不受影响，只有证据变化才会重新打开。</li>
+</ol>
+<h3>人工确认回写</h3>
+<ul>
+  <li>在线：<code>/review/</code> 逐条处理。</li>
+  <li>离线：<code>export_data --only review</code> → 在 <code>review_list.xlsx</code> 的 decision 列填写 <code>merge</code> / <code>reject</code> / <code>needs_info</code>（异常表填 <code>resolve</code> / <code>ignore</code>）→ <code>import_review review_list.xlsx --reviewer 姓名</code>。</li>
+</ul>
+
+<h2 id="live">面试现场的新资料</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>情况</th><th>系统表现</th><th>处理方式</th></tr></thead>
+<tbody>
+<tr><td>提取错误（表头不识别、PDF 无表格、值无法解析）</td><td><code>--dry-run</code> 列出未识别列；UNPARSEABLE / INVALID_VALUE 异常带页码行号</td><td>补别名或映射文件后重导；原件已归档，重导不会重复</td></tr>
+<tr><td>编号冲突（同 OE 不同件、同家编号重复）</td><td>SHARED_OE_CONFLICT / DUPLICATE_KEY_IN_FILE，默认不合并</td><td>复核队列中核对，写备注；需要时向供应商确认</td></tr>
+<tr><td>规格缺失</td><td>MISSING_* 异常；缺关键字段不自动归一，INSUFFICIENT_FOR_MATCHING</td><td>归入待补充；补齐后重新导入（CONFLICT/UPDATED 会自动触发重评）</td></tr>
+<tr><td>疑似重复</td><td>suspect 候选，含原因、冲突、缺失、建议动作</td><td>确认 / 否决 / 待补充，决定可审计、可撤销</td></tr>
+</tbody></table></div>
+</main>
+</div>
+</body>
+</html>

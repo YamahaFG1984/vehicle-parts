@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}批次 #{{ batch.pk }} · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>批次 #{{ batch.pk }} · {{ batch.source_file.original_name }}</h1>
+<p>供应商 {{ batch.source_file.supplier }} · {{ batch.get_status_display }} · 规则 {{ batch.ruleset_version }} ·
+sha256 <span class="mono">{{ batch.source_file.sha256|truncatechars:20 }}</span> ·
+<a href="{% url 'catalog:source_download' batch.source_file.pk %}">下载原件</a></p>
+{% if batch.status == "duplicate" %}<p class="box">内容与批次 #{{ batch.stats.duplicate_of }} 相同，未产生数据变化。</p>{% endif %}
+<p class="filters"><a class="tag {% if not status %}info{% endif %}" href="?">全部</a>
+{% for key, n in counts.items %}<a class="tag {% if key == status %}info{% endif %}" href="?status={{ key }}">{{ key }} {{ n }}</a>{% endfor %}</p>
+{% if batch.report.unmapped_columns %}<p class="box">未识别列（原值已保留在原始行中）：{{ batch.report.unmapped_columns|join:", " }}</p>{% endif %}
+{% if batch.report.not_in_latest %}<p class="box">本次未出现（未删除）：{{ batch.report.not_in_latest|join:", " }}</p>{% endif %}
+{% for i in file_issues %}<p class="box"><span class="tag bad">{{ i.code }}</span> {{ i.message }} {{ i.details.locator }}</p>{% endfor %}
+<details class="box"><summary>列映射</summary><pre class="raw">{% for t in batch.mapping.tables %}{{ t.table }} 表头 {{ t.header_locator }}
+{% for h, f in t.columns.items %}  {{ h }} → {{ f }}
+{% endfor %}{% endfor %}</pre></details>
+<div class="table-wrap"><table>
+<thead><tr><th>来源定位</th><th>编号</th><th>状态</th><th>异常</th></tr></thead>
+<tbody>
+{% for r in records %}
+<tr><td class="mono">{{ r.locator_label }}</td><td>{{ r.supplier_part_no|default:"（空）" }}</td>
+<td>{% if r.diff_status == "new" %}<span class="tag info">新增</span>{% elif r.diff_status == "updated" %}<span class="tag ok">更新</span>{% elif r.diff_status == "conflict" %}<span class="tag bad">冲突</span>{% elif r.diff_status == "unchanged" %}<span class="tag">未变</span>{% else %}<span class="tag warn">{{ r.get_diff_status_display }}</span>{% endif %}</td>
+<td>{% for i in r.issues.all %}<span class="tag {% if i.severity == 'error' %}bad{% elif i.severity == 'warning' %}warn{% endif %}" title="{{ i.message }}">{{ i.code }}</span> {% endfor %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endblock %}

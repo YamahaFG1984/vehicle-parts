@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>零件资料归一化 Demo</title>
+<meta name="description" content="供应商零件资料的可追溯归档与归一化 Demo：PRD、设计文档、分步实施文档与结果样例。">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+  <a class="brand" href="index.html">零件资料归一化 Demo</a>
+  <a class="nav" href="index.html" aria-current="page">首页</a>
+  <a class="nav" href="prd.html">PRD</a>
+  <a class="nav" href="design.html">设计文档</a>
+  <a class="nav" href="implementation.html">分步实施</a>
+  <button class="theme-toggle" type="button">明/暗</button>
+</div></header>
+
+<div class="single">
+<h1>供应商零件资料的可追溯归档与归一化</h1>
+<p class="subtitle">北美重卡售后零配件 · Django 5.2 + PostgreSQL 最小可运行 Demo</p>
+
+<p>同一个零件在不同供应商、品牌、目录中编号和名称各不相同；编号相似的又可能是不同产品。本项目把供应商的 Excel / PDF / CSV 资料导入为<strong>可查询、可核对、可导出、每个字段都能回看原始出处</strong>的产品档案，并把拿不准的对应关系交给人工确认。</p>
+
+<div class="callout">
+<p><strong>核心原则</strong>：原件只追加不覆盖；每条数据带出处（文件 · 工作表/页 · 行 · 列）；规则只在证据充分且没有任何冲突时自动归一，其余一律进入人工复核并说明理由；人工决定优先于规则、可审计、可回滚。</p>
+</div>
+
+<div class="cards">
+  <a class="card" href="prd.html"><h3>PRD 产品需求</h3><p>背景、目标与非目标、用户角色、功能需求与验收标准、样本数据风险清单。</p></a>
+  <a class="card" href="design.html"><h3>设计文档</h3><p>架构、数据模型、处理流程、匹配规则、人工复核与增量维护，以及每项选择的理由与取舍。</p></a>
+  <a class="card" href="implementation.html"><h3>分步实施</h3><p>从环境搭建到演示的 9 个步骤，每步的产出、命令、完成标准；部署与维护说明。</p></a>
+</div>
+
+<h2 id="samples">结果样例</h2>
+<p>运行 <code>python manage.py demo --with-increment</code> 后由系统导出的文件（导入供应商 A、B 原始报价表，再导入 A 的新版本和供应商 C 的 PDF 目录）：</p>
+<div class="table-wrap"><table>
+<thead><tr><th>文件</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td><a href="samples/master_data.xlsx">master_data.xlsx</a></td><td>主数据：归一产品、成员条目（各品牌号）、字段级来源</td></tr>
+<tr><td><a href="samples/supplier_offers.xlsx">supplier_offers.xlsx</a></td><td>供应商报价：同一产品不同供应商分别保留，含历史报价</td></tr>
+<tr><td><a href="samples/review_list.xlsx">review_list.xlsx</a></td><td>待人工确认清单：疑似重复（触发原因、冲突字段、缺失信息、建议动作）与记录异常；可填写后回写</td></tr>
+<tr><td><a href="samples/import_report.xlsx">import_report.xlsx</a></td><td>导入报告：每个批次的新增 / 更新 / 冲突 / 未变 / 本次未出现</td></tr>
+</tbody></table></div>
+
+<h2 id="quickstart">快速开始</h2>
+<pre><code>uv sync
+cp .env.example .env            # 填写 DATABASE_URL
+uv run python manage.py migrate
+uv run python manage.py demo --with-increment --reviewer reviewer --password 你的密码
+uv run python manage.py runserver   # http://127.0.0.1:8000/</code></pre>
+<p>服务器上可直接 <code>docker compose up -d</code>（包含 PostgreSQL 与 Web 服务），详见 <a href="implementation.html#deploy">部署</a>。</p>
+
+<footer>源代码与本说明文档位于同一仓库；本站由 <code>docs/</code> 目录直接发布到 GitHub Pages。</footer>
+</div>
+</body>
+</html>

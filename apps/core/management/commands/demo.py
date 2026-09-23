@@ -1,0 +1,74 @@
+"""One-shot demo: reset business data, import the samples, match, export."""
+
+from pathlib import Path
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.management.base import BaseCommand, CommandError
+from django.db import connection, transaction
+
+from apps.catalog.models import FieldValue, PartNumber, Product, SupplierItem, SupplierOffer
+from apps.exports.exporters import export_all
+from apps.ingestion.models import ImportBatch, SourceFile, SourceRecord, Supplier
+from apps.ingestion.services import import_source
+from apps.matching.engine import run_matching
+from apps.matching.models import Issue, MatchCandidate, ReviewDecision
+
+BASE = [("候选人材料_供应商A报价表.xlsx", "A", "供应商A"),
+        ("候选人材料_供应商B报价表.xlsx", "B", "供应商B")]
+INCREMENT = [("samples/demo/供应商A报价表_v2.xlsx", "A", "供应商A"),
+             ("samples/demo/供应商C目录.pdf", "C", "供应商C")]
+
+
+class Command(BaseCommand):
+    help = "演示：清空业务数据 → 导入样本 → 匹配 → 导出。--with-increment 追加导入增量演示文件。"
+
+    def add_arguments(self, parser):
+        parser.add_argument("--with-increment", action="store_true")
+        parser.add_argument("--out", default=str(settings.EXPORT_DIR))
+        parser.add_argument("--noinput", action="store_true", help="不询问，直接清空业务数据")
+        parser.add_argument("--reviewer", help="同时创建一个可登录的复核账号（staff）")
+        parser.add_argument("--password", help="复核账号密码（与 --reviewer 一起使用）")
+
+    def handle(self, *args, **opts):
+        if SupplierItem.objects.exists() and not opts["noinput"]:
+            answer = input("将清空所有导入、档案、候选与复核记录（用户账号保留）。继续？[y/N] ")
+            if answer.strip().lower() != "y":
+                raise CommandError("已取消")
+        self.reset()
+        steps = BASE + (INCREMENT if opts["with_increment"] else [])
+        for rel, code, name in steps:
+            path = settings.BASE_DIR / rel
+            if not path.exists():
+                raise CommandError(f"缺少文件 {path}（增量素材可用 make_demo_samples 生成）")
+            result = import_source(path, code, supplier_name=name)
+            summary = run_matching()
+            self.stdout.write(self.style.SUCCESS(f"导入 {rel}: {result.batch.stats}"))
+            self.stdout.write(f"  匹配：{summary.as_text()}")
+        for path in export_all(Path(opts["out"])):
+            self.stdout.write(self.style.SUCCESS(f"已导出 {path}"))
+        if opts["reviewer"]:
+            self.make_reviewer(opts["reviewer"], opts["password"])
+
+    @transaction.atomic
+    def reset(self):
+        files = [sf.file for sf in SourceFile.objects.all()]
+        models = (ReviewDecision, Issue, MatchCandidate, SupplierOffer, PartNumber, FieldValue,
+                  SupplierItem, Product, SourceRecord, ImportBatch, SourceFile, Supplier)
+        tables = ", ".join(connection.ops.quote_name(m._meta.db_table) for m in models)
+        with connection.cursor() as cursor:  # restart ids so product codes begin at P-000001
+            cursor.execute(f"TRUNCATE {tables} RESTART IDENTITY CASCADE")
+        # Demo reset only: in normal operation archived originals are never deleted.
+        for f in files:
+            f.delete(save=False)
+        self.stdout.write("已清空业务数据")
+
+    def make_reviewer(self, username, password):
+        if not password:
+            raise CommandError("--reviewer 需要同时提供 --password")
+        user, created = get_user_model().objects.get_or_create(
+            username=username, defaults={"is_staff": True})
+        user.is_staff = True
+        user.set_password(password)
+        user.save()
+        self.stdout.write(self.style.SUCCESS(f"复核账号 {username} 已{'创建' if created else '更新'}"))

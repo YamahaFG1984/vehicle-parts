@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}搜索 · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>查询</h1>
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="任一编号、OE、关键词、品牌" autofocus>
+  <input name="supplier" value="{{ supplier }}" placeholder="供应商代码/名称" size="12">
+  <select name="state"><option value="">全部分类</option>{% for s in states %}<option {% if s == state %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+  <button type="submit">查询</button>
+</form>
+<p class="muted">编号比较忽略大小写、空格、连字符：<code>oevnl1001</code> 与 <code>OE-VNL-1001</code> 等价。</p>
+{% if q or supplier or state %}<p>{{ results|length }} 个归一产品</p>{% endif %}
+{% if suggestions %}
+<div class="box"><strong>没有完全匹配。您是不是要找：</strong>
+{% for pn in suggestions %}<a class="tag" href="{% url 'catalog:product_detail' pn.item.product.code %}">{{ pn.number_raw }} · {{ pn.item.supplier.code }}</a> {% endfor %}</div>
+{% endif %}
+{% if results %}
+<div class="table-wrap"><table>
+<thead><tr><th>产品</th><th>分类</th><th>类别</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>成员（品牌号/供应商编号）</th><th>命中</th></tr></thead>
+<tbody>
+{% for r in results %}
+<tr>
+  <td><a href="{% url 'catalog:product_detail' r.product.code %}">{{ r.product.code }}</a></td>
+  <td>{% include "catalog/_state.html" with state=r.state has_open=r.has_open %}</td>
+  <td>{{ r.product.category }}</td><td>{{ r.product.position }}</td>
+  <td>{{ r.product.fitment_label }}</td><td class="mono">{{ r.product.dims_label }}</td>
+  <td>{% for m in r.members %}<a class="tag" href="{% url 'catalog:item_detail' m.pk %}">{{ m.supplier.code }}:{{ m.supplier_part_no }}</a> {% endfor %}</td>
+  <td class="muted">{% for h in r.hits %}{{ h.supplier.code }}:{{ h.supplier_part_no }} {% endfor %}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

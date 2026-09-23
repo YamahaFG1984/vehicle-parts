@@ -1,0 +1,22 @@
+# 语义字段 → 表头别名。匹配时忽略大小写、空格和标点。
+# 面对新格式：先 `import_source <文件> --dry-run` 看未识别列，再在这里补别名（或用 --mapping 指定）。
+fields:
+  source_ref: [source record id, source ref, record id, ref, line id, 序号, 记录号]
+  supplier_part_no: [supplier sku, brand number, part no, part number, "part #", part, item no, item number, sku, mfr part, 编号, 货号, 产品编号, 供应商编号]
+  brand: [brand, brand name, manufacturer, mfr, 品牌]
+  name: [product description, english name, description, product name, name, desc, 名称, 品名, 产品名称]
+  category: [category, product type, type, 类别, 产品类别]
+  fitment: [truck application, fitment, application, vehicle, fits, vehicle application, 适用车型, 车型]
+  position: [position, install side, side, location, mounting position, 位置, 安装位置]
+  oe_numbers: [oe / reference, oe reference, cross ref, cross reference, oe, oem, "oem #", oe number, oe no, interchange, 参考号, oe号]
+  package_dims: [package size, package, carton dimensions, carton size, dimensions, package dimensions, 包装尺寸, 尺寸]
+  price: [unit price, offer price, price, cost, fob price, 单价, 报价, 价格]
+  currency: [currency, curr, ccy, 币种]
+  moq: [moq, min order, minimum order, min qty, min order qty, 起订量]
+  quote_date: [quote date, quoted on, date, price date, 报价日期, 日期]
+
+# 表头识别：命中别名的列数至少为多少才认作表头；且必须包含下列字段
+header_min_matches: 3
+required_fields: [supplier_part_no]
+# 在每个工作表/每页的前多少行内寻找表头
+header_scan_rows: 30

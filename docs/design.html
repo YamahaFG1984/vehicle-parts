@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>设计文档 · 零件资料归一化</title>
+<meta name="description" content="架构、数据模型、处理流程、匹配规则、人工复核与增量维护的设计，以及选择理由与取舍。">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+  <a class="brand" href="index.html">零件资料归一化 Demo</a>
+  <a class="nav" href="index.html">首页</a>
+  <a class="nav" href="prd.html">PRD</a>
+  <a class="nav" href="design.html" aria-current="page">设计文档</a>
+  <a class="nav" href="implementation.html">分步实施</a>
+  <button class="theme-toggle" type="button">明/暗</button>
+</div></header>
+
+<div class="layout">
+<nav class="toc" aria-label="目录">
+  <p>目录</p>
+  <ol>
+    <li><a href="#overview">1. 设计概览</a></li>
+    <li><a href="#arch">2. 架构</a>
+      <ol><li><a href="#stack">2.1 技术选型</a></li><li><a href="#apps">2.2 应用划分</a></li><li><a href="#layout">2.3 代码约定</a></li></ol></li>
+    <li><a href="#model">3. 数据模型</a>
+      <ol><li><a href="#er">3.1 ER 图</a></li><li><a href="#model-detail">3.2 模型明细</a></li><li><a href="#model-why">3.3 模型取舍</a></li></ol></li>
+    <li><a href="#flow">4. 处理流程</a>
+      <ol><li><a href="#flow-ingest">4.1 归档与提取</a></li><li><a href="#flow-map">4.2 列映射</a></li><li><a href="#flow-norm">4.3 归一化</a></li><li><a href="#flow-diff">4.4 增量比对</a></li><li><a href="#issues">4.5 异常类型</a></li></ol></li>
+    <li><a href="#match">5. 匹配规则</a>
+      <ol><li><a href="#blocking">5.1 候选生成</a></li><li><a href="#compare">5.2 字段比较</a></li><li><a href="#decide">5.3 分类决策</a></li><li><a href="#cluster">5.4 聚类与防传递</a></li><li><a href="#samples">5.5 样本结果</a></li><li><a href="#increment-result">5.6 增量结果</a></li></ol></li>
+    <li><a href="#review">6. 人工复核与回写</a></li>
+    <li><a href="#maint">7. 持续维护</a></li>
+    <li><a href="#tradeoffs">8. 取舍汇总</a></li>
+    <li><a href="#limits">9. 已知局限</a></li>
+  </ol>
+</nav>
+
+<main>
+<h1>设计文档</h1>
+<p class="meta">对应 PRD v1.0 · 规则集版本 <code>2026.09-1</code></p>
+
+<h2 id="overview">1. 设计概览</h2>
+<p>整个系统围绕三条不变量设计：</p>
+<ol>
+  <li><strong>证据不可变</strong>：原始文件按内容哈希归档；每次导入的每一行都保存为一条“观察记录”（原始值 + 定位），之后只追加，不修改、不删除。</li>
+  <li><strong>整理结果可重算</strong>：供应商条目、归一产品、匹配候选都是从证据和规则“推导”出来的，规则调整后可以重跑；唯一不能重算的是人工决定，所以人工决定单独保存、优先生效。</li>
+  <li><strong>宁可待确认，不可错合并</strong>：自动归一只发生在“有共同 OE 且所有关键属性都存在且一致”的跨供应商记录之间；其余一律给人看，并且说清楚为什么。</li>
+</ol>
+
+<h2 id="arch">2. 架构</h2>
+<figure class="diagram">
+<svg viewBox="0 0 900 400" role="img" aria-label="系统架构图">
+  <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+  <!-- inputs -->
+  <rect x="10" y="40" width="130" height="150" rx="8" class="box"/>
+  <text x="75" y="64" text-anchor="middle" class="t-b">输入</text>
+  <text x="75" y="92" text-anchor="middle" class="t">Excel .xlsx</text>
+  <text x="75" y="114" text-anchor="middle" class="t">PDF（文本层）</text>
+  <text x="75" y="136" text-anchor="middle" class="t">CSV</text>
+  <text x="75" y="166" text-anchor="middle" class="t-s">+ 映射文件(可选)</text>
+  <!-- ingestion -->
+  <rect x="180" y="20" width="170" height="190" rx="8" class="box-accent"/>
+  <text x="265" y="44" text-anchor="middle" class="t-b">ingestion</text>
+  <text x="265" y="72" text-anchor="middle" class="t">内容寻址归档</text>
+  <text x="265" y="96" text-anchor="middle" class="t">提取器 xlsx/csv/pdf</text>
+  <text x="265" y="120" text-anchor="middle" class="t">表头识别 + 列别名</text>
+  <text x="265" y="144" text-anchor="middle" class="t">观察记录 SourceRecord</text>
+  <text x="265" y="168" text-anchor="middle" class="t">增量比对</text>
+  <text x="265" y="194" text-anchor="middle" class="t-s">ImportBatch 原子事务</text>
+  <!-- catalog -->
+  <rect x="390" y="20" width="170" height="190" rx="8" class="box-info"/>
+  <text x="475" y="44" text-anchor="middle" class="t-b">catalog</text>
+  <text x="475" y="72" text-anchor="middle" class="t">归一化器（纯函数）</text>
+  <text x="475" y="96" text-anchor="middle" class="t">SupplierItem 条目</text>
+  <text x="475" y="120" text-anchor="middle" class="t">FieldValue 字段来源</text>
+  <text x="475" y="144" text-anchor="middle" class="t">PartNumber / Offer</text>
+  <text x="475" y="168" text-anchor="middle" class="t">Product 归一产品</text>
+  <text x="475" y="194" text-anchor="middle" class="t-s">搜索 selectors</text>
+  <!-- matching -->
+  <rect x="600" y="20" width="170" height="190" rx="8" class="box-warn"/>
+  <text x="685" y="44" text-anchor="middle" class="t-b">matching</text>
+  <text x="685" y="72" text-anchor="middle" class="t">候选生成 blocking</text>
+  <text x="685" y="96" text-anchor="middle" class="t">字段比较 + 评分</text>
+  <text x="685" y="120" text-anchor="middle" class="t">分类 + 原因码</text>
+  <text x="685" y="144" text-anchor="middle" class="t">并查集聚类</text>
+  <text x="685" y="168" text-anchor="middle" class="t">Issue / 复核 / 审计</text>
+  <text x="685" y="194" text-anchor="middle" class="t-s">rules/*.yaml 带版本</text>
+  <line x1="140" y1="115" x2="178" y2="115" class="line" marker-end="url(#ah)"/>
+  <line x1="350" y1="115" x2="388" y2="115" class="line" marker-end="url(#ah)"/>
+  <line x1="560" y1="115" x2="598" y2="115" class="line" marker-end="url(#ah)"/>
+  <path d="M685 210 C 685 240, 475 240, 475 212" class="line-dash" marker-end="url(#ah)"/>
+  <text x="580" y="236" text-anchor="middle" class="t-s">产品归属回写</text>
+  <!-- outputs -->
+  <rect x="800" y="40" width="90" height="150" rx="8" class="box-ok"/>
+  <text x="845" y="64" text-anchor="middle" class="t-b">输出</text>
+  <text x="845" y="92" text-anchor="middle" class="t">Web</text>
+  <text x="845" y="114" text-anchor="middle" class="t">Admin</text>
+  <text x="845" y="136" text-anchor="middle" class="t">xlsx 导出</text>
+  <text x="845" y="158" text-anchor="middle" class="t">CLI</text>
+  <line x1="770" y1="115" x2="798" y2="115" class="line" marker-end="url(#ah)"/>
+  <!-- storage -->
+  <rect x="180" y="290" width="380" height="80" rx="8" class="box"/>
+  <text x="370" y="316" text-anchor="middle" class="t-b">PostgreSQL 16</text>
+  <text x="370" y="340" text-anchor="middle" class="t">JSONField · pg_trgm 模糊检索 · 约束 · 事务</text>
+  <text x="370" y="360" text-anchor="middle" class="t-s">independent DB/role per project</text>
+  <rect x="600" y="290" width="170" height="80" rx="8" class="box"/>
+  <text x="685" y="316" text-anchor="middle" class="t-b">media/originals/</text>
+  <text x="685" y="340" text-anchor="middle" class="t">&lt;sha256&gt;/原文件名</text>
+  <text x="685" y="360" text-anchor="middle" class="t-s">只写不改</text>
+  <line x1="370" y1="212" x2="370" y2="288" class="line-dash"/>
+  <line x1="265" y1="212" x2="640" y2="288" class="line-dash"/>
+  <text x="120" y="330" text-anchor="middle" class="t-s">Django 5.2 LTS</text>
+  <text x="120" y="348" text-anchor="middle" class="t-s">core: User / TimeStamped</text>
+</svg>
+<figcaption>图 1 · 四个业务 app 单向依赖：ingestion → catalog → matching；exports 只读。</figcaption>
+</figure>
+
+<h3 id="stack">2.1 技术选型</h3>
+<div class="tradeoff"><h4>Django 5.2 LTS</h4><dl>
+<dt>选择</dt><dd>Django 5.2（LTS，支持到 2028-04），ORM + 迁移 + Admin + 管理命令。</dd>
+<dt>理由</dt><dd>数据档案类系统的主要工作是建模、约束、后台查看与人工操作；Admin 直接提供复核人可用的后台，管理命令天然适合“导入 / 匹配 / 导出”这类批处理；LTS 适合长期维护。</dd>
+<dt>取舍</dt><dd>比 FastAPI + 前端更重，但省下了后台与认证的开发；本项目不追求界面，Django 模板足够。</dd>
+</dl></div>
+<div class="tradeoff"><h4>PostgreSQL 而非 SQLite</h4><dl>
+<dt>选择</dt><dd>PostgreSQL 16，使用 <code>JSONField</code>（原始行）、<code>pg_trgm</code>（编号/名称模糊检索）、部分唯一约束、事务。</dd>
+<dt>理由</dt><dd>原始行结构因供应商而异，JSONB 保存原样最自然；模糊检索需要 trigram 索引；多人复核与增量导入需要可靠的并发与约束。</dd>
+<dt>取舍</dt><dd>本地开发需要一个 PG 实例：本机共用已有容器（独立库与角色），服务器用 compose 自带的 db 服务。</dd>
+</dl></div>
+<div class="tradeoff"><h4>规则引擎 + 人工复核，而非机器学习</h4><dl>
+<dt>选择</dt><dd>可解释的确定性规则：候选生成 → 字段比较（相等/冲突/缺失）→ 硬冲突一票否决 → 评分 → 分类；规则参数放 YAML 并带版本号。</dd>
+<dt>理由</dt><dd>样本极小（53 行），没有标注数据；业务要求“说明触发原因、冲突字段、缺失信息”，规则天然可解释；错合并代价远高于漏合并。</dd>
+<dt>取舍</dt><dd>召回率依赖同义词与规则覆盖，新品类需要维护同义词；积累足够人工决定后可加入学习型打分作为辅助信号（不替代硬冲突否决）。</dd>
+</dl></div>
+<div class="tradeoff"><h4>其他库</h4><dl>
+<dt>选择</dt><dd><code>openpyxl</code>（读写 xlsx，保留行号）、<code>pdfplumber</code>（PDF 表格与页码）、<code>django-environ</code>（12-factor 配置）、<code>PyYAML</code>、<code>rapidfuzz</code>（名称相似度）、<code>uv</code>（依赖锁定）、<code>pytest-django</code>。</dd>
+<dt>理由</dt><dd>不用 pandas 读取：pandas 会推断类型、丢失原始文本与行号，而本系统最看重“原值 + 定位”。</dd>
+<dt>取舍</dt><dd>手写少量解析代码换来对原始值的完全控制。</dd>
+</dl></div>
+
+<h3 id="apps">2.2 应用划分</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>App</th><th>职责</th><th>主要模型</th></tr></thead>
+<tbody>
+<tr><td><code>core</code></td><td>自定义 User（项目开始即建立，Two Scoops 建议）、<code>TimeStampedModel</code>、演示命令</td><td>User</td></tr>
+<tr><td><code>ingestion</code></td><td>原件归档、提取、表头识别与列映射、导入批次、增量比对</td><td>Supplier, SourceFile, ImportBatch, SourceRecord</td></tr>
+<tr><td><code>catalog</code></td><td>归一化器、供应商条目、字段来源、编号、报价、归一产品、搜索与详情页</td><td>SupplierItem, FieldValue, PartNumber, SupplierOffer, Product</td></tr>
+<tr><td><code>matching</code></td><td>候选生成、比较、分类、聚类、异常、人工复核与审计、复核页</td><td>MatchCandidate, Issue, ReviewDecision</td></tr>
+<tr><td><code>exports</code></td><td>主数据、报价、待确认清单、导入报告导出；复核结果回写</td><td>（无）</td></tr>
+</tbody></table></div>
+
+<h3 id="layout">2.3 代码约定（Django 5.2 / Two Scoops）</h3>
+<ul>
+  <li>设置拆分 <code>config/settings/{base,local,test,production}.py</code>；机密与连接串只从环境变量读取（<code>.env</code> 不入库）。</li>
+  <li>业务写操作放 <code>services.py</code>，读查询放 <code>selectors.py</code>；视图与管理命令只做参数解析和调用，保持“薄”。</li>
+  <li>模型用 <code>TextChoices</code>、<code>UniqueConstraint</code>、<code>CheckConstraint(condition=…)</code>（5.1+ 写法）、<code>db_default</code>；所有模型继承 <code>TimeStampedModel</code>。</li>
+  <li>导入批次整体包在 <code>transaction.atomic()</code> 中；匹配重跑同样原子（<code>--dry-run</code> 即在事务末尾回滚）。</li>
+  <li>全站登录访问：使用 Django 5.1+ 的 <code>LoginRequiredMiddleware</code>，登录复用 Admin 登录页；静态文件在生产环境由 WhiteNoise 提供。</li>
+  <li>归一化器、比较器是无数据库依赖的纯函数，单元测试覆盖样本中的每一类陷阱。</li>
+  <li>可调参数放 <code>config/rules/</code>：<code>column_aliases.yaml</code>、<code>synonyms.yaml</code>、<code>matching.yaml</code>。</li>
+</ul>
+
+<h2 id="model">3. 数据模型</h2>
+<h3 id="er">3.1 ER 图</h3>
+<figure class="diagram">
+<svg viewBox="0 0 900 470" role="img" aria-label="实体关系图">
+  <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+  <!-- evidence layer -->
+  <text x="20" y="22" class="t-s">证据层（只追加）</text>
+  <rect x="20" y="32" width="140" height="56" rx="6" class="box-accent"/><text x="90" y="55" text-anchor="middle" class="t-b">Supplier</text><text x="90" y="75" text-anchor="middle" class="t-s">code · name</text>
+  <rect x="200" y="32" width="160" height="56" rx="6" class="box-accent"/><text x="280" y="55" text-anchor="middle" class="t-b">SourceFile</text><text x="280" y="75" text-anchor="middle" class="t-s">sha256 ⊕ · file</text>
+  <rect x="400" y="32" width="160" height="56" rx="6" class="box-accent"/><text x="480" y="55" text-anchor="middle" class="t-b">ImportBatch</text><text x="480" y="75" text-anchor="middle" class="t-s">status · stats · mapping</text>
+  <rect x="600" y="32" width="190" height="56" rx="6" class="box-accent"/><text x="695" y="55" text-anchor="middle" class="t-b">SourceRecord</text><text x="695" y="75" text-anchor="middle" class="t-s">locator · raw_data · row_hash</text>
+  <line x1="160" y1="60" x2="198" y2="60" class="line" marker-end="url(#ah2)"/>
+  <line x1="360" y1="60" x2="398" y2="60" class="line" marker-end="url(#ah2)"/>
+  <line x1="560" y1="60" x2="598" y2="60" class="line" marker-end="url(#ah2)"/>
+  <!-- catalog layer -->
+  <text x="20" y="150" class="t-s">档案层（可重算）</text>
+  <rect x="20" y="160" width="170" height="60" rx="6" class="box-info"/><text x="105" y="184" text-anchor="middle" class="t-b">Product</text><text x="105" y="204" text-anchor="middle" class="t-s">code P-000001 · status</text>
+  <rect x="260" y="160" width="220" height="60" rx="6" class="box-info"/><text x="370" y="184" text-anchor="middle" class="t-b">SupplierItem</text><text x="370" y="204" text-anchor="middle" class="t-s">⊕(supplier, supplier_part_no)</text>
+  <rect x="560" y="140" width="150" height="46" rx="6" class="box-info"/><text x="635" y="160" text-anchor="middle" class="t-b">FieldValue</text><text x="635" y="177" text-anchor="middle" class="t-s">field · raw · normalized</text>
+  <rect x="560" y="196" width="150" height="46" rx="6" class="box-info"/><text x="635" y="216" text-anchor="middle" class="t-b">PartNumber</text><text x="635" y="233" text-anchor="middle" class="t-s">type · number_norm</text>
+  <rect x="560" y="252" width="150" height="46" rx="6" class="box-info"/><text x="635" y="272" text-anchor="middle" class="t-b">SupplierOffer</text><text x="635" y="289" text-anchor="middle" class="t-s">price · currency · moq</text>
+  <line x1="258" y1="190" x2="192" y2="190" class="line" marker-end="url(#ah2)"/><text x="225" y="182" text-anchor="middle" class="t-s">N:1</text>
+  <line x1="558" y1="163" x2="482" y2="180" class="line" marker-end="url(#ah2)"/>
+  <line x1="558" y1="219" x2="482" y2="200" class="line" marker-end="url(#ah2)"/>
+  <line x1="558" y1="275" x2="482" y2="212" class="line" marker-end="url(#ah2)"/>
+  <!-- provenance links to SourceRecord -->
+  <path d="M710 163 C 800 150, 800 110, 740 90" class="line-dash" marker-end="url(#ah2)"/>
+  <path d="M710 219 C 820 200, 830 110, 760 90" class="line-dash" marker-end="url(#ah2)"/>
+  <path d="M710 275 C 840 250, 850 110, 780 90" class="line-dash" marker-end="url(#ah2)"/>
+  <path d="M400 158 C 420 120, 560 110, 640 90" class="line-dash" marker-end="url(#ah2)"/>
+  <text x="850" y="200" text-anchor="middle" class="t-s">source_record</text>
+  <text x="500" y="120" class="t-s">current_record</text>
+  <!-- matching layer -->
+  <text x="20" y="340" class="t-s">判断层（人工决定优先）</text>
+  <rect x="200" y="350" width="220" height="60" rx="6" class="box-warn"/><text x="310" y="374" text-anchor="middle" class="t-b">MatchCandidate</text><text x="310" y="394" text-anchor="middle" class="t-s">item_a · item_b · reasons · status</text>
+  <rect x="460" y="350" width="160" height="60" rx="6" class="box-warn"/><text x="540" y="374" text-anchor="middle" class="t-b">Issue</text><text x="540" y="394" text-anchor="middle" class="t-s">type · severity · field</text>
+  <rect x="660" y="350" width="180" height="60" rx="6" class="box-warn"/><text x="750" y="374" text-anchor="middle" class="t-b">ReviewDecision</text><text x="750" y="394" text-anchor="middle" class="t-s">append-only 审计</text>
+  <line x1="310" y1="348" x2="350" y2="222" class="line" marker-end="url(#ah2)"/><text x="296" y="300" class="t-s">×2</text>
+  <line x1="520" y1="348" x2="440" y2="222" class="line" marker-end="url(#ah2)"/>
+  <line x1="658" y1="380" x2="622" y2="380" class="line" marker-end="url(#ah2)"/>
+  <path d="M750 412 C 750 450, 310 450, 310 412" class="line" marker-end="url(#ah2)"/>
+</svg>
+<figcaption>图 2 · 实线 = 外键；虚线 = 来源链接（每个档案层对象都指回产生它的 SourceRecord）。⊕ = 唯一约束。</figcaption>
+</figure>
+
+<h3 id="model-detail">3.2 模型明细</h3>
+<h4>ingestion</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>模型</th><th>关键字段</th><th>约束 / 索引</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>Supplier</td><td>code, name</td><td>code 唯一</td><td>供应商不在表内时由命令参数或文件名（<code>供应商X</code>）推断</td></tr>
+<tr><td>SourceFile</td><td>supplier, original_name, file, sha256, size, file_type, uploaded_by</td><td>sha256 唯一</td><td>存储路径 <code>originals/&lt;sha256&gt;/&lt;原名&gt;</code>，永不覆盖；同哈希再次导入 → 批次状态 duplicate</td></tr>
+<tr><td>ImportBatch</td><td>source_file, status, mapping(JSON), ruleset_version, stats(JSON), error, finished_at</td><td>—</td><td>记录本次用到的列映射与规则版本，便于事后复现</td></tr>
+<tr><td>SourceRecord</td><td>batch, supplier, locator(JSON), locator_label, source_ref, supplier_part_no, raw_data(JSON), mapped(JSON), row_hash, diff_status</td><td>(batch, locator_label) 唯一；(supplier, supplier_part_no) 索引</td><td>一行 = 一次观察；<code>raw_data</code> 按原列顺序保存 <code>[原表头, 原值]</code> 对（jsonb 会重排对象键，所以不用字典），<code>mapped</code> 保存语义字段 → {原值, 源列}</td></tr>
+</tbody></table></div>
+<h4>catalog</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>模型</th><th>关键字段</th><th>约束 / 索引</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>SupplierItem</td><td>supplier, supplier_part_no, brand, name, category, position, fitment_make, fitment_model, year_from, year_to, dims_cm(ArrayField 三元组), oe_numbers(ArrayField，规范化), product, current_record, attr_hash, present_in_latest</td><td>(supplier, supplier_part_no) 唯一；name trigram GIN；oe_numbers GIN；(category, make, model) 索引</td><td>供应商的一个在售条目，是增量比对的身份单位；归一化后的“当前值”冗余在此便于匹配</td></tr>
+<tr><td>FieldValue</td><td>item, field, raw_value, normalized_value(JSON), source_record, source_column, is_current</td><td>(item, field) 上 is_current 部分唯一约束</td><td>字段级来源；值变化时旧行 is_current=False，保留历史</td></tr>
+<tr><td>PartNumber</td><td>item, number_raw, number_norm, kind(supplier_sku/oe), source_record</td><td>number_norm trigram GIN；(item, kind, number_norm) 唯一</td><td>统一的编号检索入口；<code>number_norm</code> = 大写并去除空格、连字符、点、斜杠</td></tr>
+<tr><td>SupplierOffer</td><td>item, price(Decimal，可空), currency, moq, quote_date, source_record, is_current</td><td>price ≥ 0 检查约束；每条目仅一条 is_current（部分唯一）</td><td>每家每次报价一行，不换算币种</td></tr>
+<tr><td>Product</td><td>code, status(active/retired), merged_into, category, position, fitment_label, dims_label, attr_consensus(JSON)</td><td>code 唯一</td><td>归一产品；每个条目恰属于一个产品（初始为单成员）；聚类变化时编号尽量稳定，被并入的产品标 retired 并指向 merged_into</td></tr>
+</tbody></table></div>
+<h4>matching</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>模型</th><th>关键字段</th><th>约束 / 索引</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>MatchCandidate</td><td>item_a, item_b, classification(auto_confirmed/suspect/auto_rejected), status(accepted/pending/rejected/needs_info/superseded), decided_by(rule/human), rule_classification（人工决定后仍保留规则意见）, priority, score, confidence, reasons(JSON), comparisons(JSON), conflicts(JSON), missing(JSON), suggested_action, ruleset_version, evidence_hash</td><td>(item_a, item_b) 唯一；检查约束 item_a &lt; item_b</td><td>对象级候选对；有序存储避免 A-B / B-A 重复</td></tr>
+<tr><td>Issue</td><td>item, source_record, batch, code, severity(error/warning/info), field, message, status(open/resolved/ignored), resolution_note</td><td>(source_record, code, field) 唯一</td><td>记录级异常：缺失、无法解析、自相矛盾、关键属性变化等</td></tr>
+<tr><td>ReviewDecision</td><td>candidate / issue, action, actor, note, via(web/xlsx/admin/system), snapshot(JSON)</td><td>只插入</td><td>审计日志；快照保存决定当时双方属性与规则输出</td></tr>
+</tbody></table></div>
+
+<h3 id="model-why">3.3 模型取舍</h3>
+<div class="tradeoff"><h4>观察记录（SourceRecord）与条目（SupplierItem）分离</h4><dl>
+<dt>选择</dt><dd>每次导入的每一行都是新的 SourceRecord；SupplierItem 以 (供应商, 供应商编号) 为身份，指向当前观察。</dd>
+<dt>理由</dt><dd>同一条目会随新报价表反复出现，分离后能回答“某字段在哪一版文件里是什么值”，增量比对也只是比较新旧观察。</dd>
+<dt>取舍</dt><dd>数据量随导入次数线性增长（对报价表规模可接受）；查询当前值需要走条目表的冗余字段。</dd>
+</dl></div>
+<div class="tradeoff"><h4>字段级来源表（FieldValue），而非每个字段加“来源列”</h4><dl>
+<dt>选择</dt><dd>一行 FieldValue 记录一个字段的原值、归一值、来源行、来源列。</dd>
+<dt>理由</dt><dd>满足“字段级来源”要求，同时保留历史；新增字段无需改表结构。</dd>
+<dt>取舍</dt><dd>存储多约 10 倍行数、需要 join；匹配所需的当前值在 SupplierItem 上冗余一份，由服务层保持一致。</dd>
+</dl></div>
+<div class="tradeoff"><h4>每个条目都属于一个 Product</h4><dl>
+<dt>选择</dt><dd>单成员产品即“独立产品”；合并就是改条目的 product 外键。</dd>
+<dt>理由</dt><dd>搜索、详情、导出统一以产品为中心，不需要区分“已归一 / 未归一”两套查询。</dd>
+<dt>取舍</dt><dd>产品编号可能因聚类变化而退役，用 merged_into 指针保留可达性。</dd>
+</dl></div>
+<div class="tradeoff"><h4>候选对（pair）而非直接聚类</h4><dl>
+<dt>选择</dt><dd>先生成两两候选并逐对说明理由，再把确认的对聚成产品。</dd>
+<dt>理由</dt><dd>人工决定的最小单位是“这两条是不是同一个”；逐对的原因、冲突、缺失最容易解释和审计。</dd>
+<dt>取舍</dt><dd>对数可能较多；通过“以簇为节点生成候选”（见 5.4）控制数量。</dd>
+</dl></div>
+<div class="tradeoff"><h4>原件内容寻址存储</h4><dl>
+<dt>选择</dt><dd>按 sha256 存放原件，数据库只存路径与哈希。</dd>
+<dt>理由</dt><dd>同名不同内容的文件不会互相覆盖；同内容重复导入天然去重；哈希可用于证明原件未被改动。</dd>
+<dt>取舍</dt><dd>原件存于文件系统（服务器上是 docker 卷），备份时需同时备份卷与数据库。</dd>
+</dl></div>
+
+<h2 id="flow">4. 处理流程</h2>
+<figure class="diagram">
+<svg viewBox="0 0 900 250" role="img" aria-label="处理流程图">
+  <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+  <g>
+    <rect x="10" y="30" width="110" height="60" rx="6" class="box-accent"/><text x="65" y="56" text-anchor="middle" class="t-b">① 归档</text><text x="65" y="76" text-anchor="middle" class="t-s">sha256 去重</text>
+    <rect x="140" y="30" width="110" height="60" rx="6" class="box-accent"/><text x="195" y="56" text-anchor="middle" class="t-b">② 提取</text><text x="195" y="76" text-anchor="middle" class="t-s">行 + 定位</text>
+    <rect x="270" y="30" width="110" height="60" rx="6" class="box-accent"/><text x="325" y="56" text-anchor="middle" class="t-b">③ 列映射</text><text x="325" y="76" text-anchor="middle" class="t-s">别名 / 映射文件</text>
+    <rect x="400" y="30" width="110" height="60" rx="6" class="box-info"/><text x="455" y="56" text-anchor="middle" class="t-b">④ 归一化</text><text x="455" y="76" text-anchor="middle" class="t-s">类别 位置 车型 尺寸</text>
+    <rect x="530" y="30" width="110" height="60" rx="6" class="box-info"/><text x="585" y="56" text-anchor="middle" class="t-b">⑤ 增量比对</text><text x="585" y="76" text-anchor="middle" class="t-s">新增/更新/冲突</text>
+    <rect x="660" y="30" width="110" height="60" rx="6" class="box-warn"/><text x="715" y="56" text-anchor="middle" class="t-b">⑥ 匹配</text><text x="715" y="76" text-anchor="middle" class="t-s">候选 比较 分类</text>
+    <rect x="790" y="30" width="100" height="60" rx="6" class="box-warn"/><text x="840" y="56" text-anchor="middle" class="t-b">⑦ 聚类</text><text x="840" y="76" text-anchor="middle" class="t-s">产品归属</text>
+    <line x1="120" y1="60" x2="138" y2="60" class="line" marker-end="url(#ah3)"/>
+    <line x1="250" y1="60" x2="268" y2="60" class="line" marker-end="url(#ah3)"/>
+    <line x1="380" y1="60" x2="398" y2="60" class="line" marker-end="url(#ah3)"/>
+    <line x1="510" y1="60" x2="528" y2="60" class="line" marker-end="url(#ah3)"/>
+    <line x1="640" y1="60" x2="658" y2="60" class="line" marker-end="url(#ah3)"/>
+    <line x1="770" y1="60" x2="788" y2="60" class="line" marker-end="url(#ah3)"/>
+  </g>
+  <rect x="400" y="160" width="240" height="60" rx="6" class="box-ok"/><text x="520" y="186" text-anchor="middle" class="t-b">⑧ 人工复核</text><text x="520" y="206" text-anchor="middle" class="t-s">Web / Admin / xlsx 回写</text>
+  <rect x="690" y="160" width="200" height="60" rx="6" class="box-ok"/><text x="790" y="186" text-anchor="middle" class="t-b">⑨ 查询与导出</text><text x="790" y="206" text-anchor="middle" class="t-s">主数据 报价 清单 报告</text>
+  <path d="M840 92 C 840 130, 560 120, 540 158" class="line" marker-end="url(#ah3)"/>
+  <path d="M470 158 C 470 120, 715 130, 715 92" class="line-dash" marker-end="url(#ah3)"/>
+  <text x="600" y="140" class="t-s">决定回写 → 重聚类</text>
+  <line x1="640" y1="190" x2="688" y2="190" class="line" marker-end="url(#ah3)"/>
+  <rect x="10" y="160" width="330" height="60" rx="6" class="box"/><text x="175" y="186" text-anchor="middle" class="t-b">Issue（异常）</text><text x="175" y="206" text-anchor="middle" class="t-s">②③④⑤⑦ 发现的问题都落为 Issue，带定位</text>
+</svg>
+<figcaption>图 3 · ①~⑤ 在一个导入事务内完成；⑥⑦ 在导入后自动执行，也可单独重跑。</figcaption>
+</figure>
+
+<h3 id="flow-ingest">4.1 归档与提取</h3>
+<ul>
+  <li><strong>归档</strong>：计算 sha256；已存在 → 批次记为 <code>duplicate</code> 并直接返回上次结果；否则复制到 <code>originals/&lt;sha256&gt;/</code>，写 SourceFile。原件路径下的文件从不被程序改写。</li>
+  <li><strong>xlsx</strong>：openpyxl 只读 + <code>data_only=True</code>（取公式结果）；逐工作表扫描前 30 行定位表头；每一数据行记录 <code>{sheet, row}</code>；完全空行跳过；日期单元格保留 ISO 文本。</li>
+  <li><strong>csv</strong>：自动识别编码（utf-8-sig / gbk 回退）与分隔符；定位 <code>{row}</code>。</li>
+  <li><strong>pdf</strong>：pdfplumber 逐页提取表格（先线框策略，失败再用文本对齐策略）；跨页续表若没有表头，沿用上一页表头（列数一致时）；定位 <code>{page, table, row}</code>。某页无法提取出表格 → Issue <code>UNPARSEABLE</code>（带页码），不静默丢弃。</li>
+</ul>
+
+<h3 id="flow-map">4.2 列映射</h3>
+<p><code>config/rules/column_aliases.yaml</code> 为每个语义字段列出表头别名（忽略大小写、空格、标点）：</p>
+<pre><code>supplier_part_no: [supplier sku, brand number, part no, part #, item no, sku, 编号, 货号]
+name:             [product description, english name, description, product name, 名称, 品名]
+fitment:          [truck application, fitment, application, vehicle, 适用车型]
+position:         [position, install side, side, location, 位置]
+oe_numbers:       [oe / reference, cross ref, oe, oem #, oe number, 参考号, oe号]
+package_dims:     [package size, package, carton dimensions, dimensions, 包装尺寸]
+price / currency / moq / quote_date / source_ref / brand / category ...</code></pre>
+<ul>
+  <li>表头识别：候选行中命中别名最多且 ≥3 个的行即表头；<code>supplier_part_no</code> 必须命中，否则该表不导入并报错。</li>
+  <li>未识别的列：原值仍保存在 <code>raw_data</code>，并在导入报告中列出，提示维护者补充别名。</li>
+  <li>显式映射：<code>--mapping file.yaml</code> 可指定工作表、表头行、列→字段、默认品牌、是否用编号后缀推断左右等，优先级高于别名。</li>
+</ul>
+
+<h3 id="flow-norm">4.3 归一化（纯函数）</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>字段</th><th>规则</th><th>样本示例</th></tr></thead>
+<tbody>
+<tr><td>类别</td><td>名称小写去标点，去掉位置词后，在 <code>synonyms.yaml</code> 中做<strong>最长短语匹配</strong>；匹配不到 → <code>UNKNOWN_CATEGORY</code></td><td><code>Air Filter Housing Cap</code> → air_filter_housing_cap（不会被 “Air Filter Housing” 截获）</td></tr>
+<tr><td>位置</td><td>三个来源：位置列、名称中的 left/right/LH/RH、编号后缀 <code>L</code>/<code>R</code>；一致则取之；不一致 → <code>POSITION_INCONSISTENT</code> 且位置视为未知；“有左右之分”的类别缺位置 → <code>MISSING_POSITION</code></td><td><code>Side Grille, Left side</code> + Left + <code>A-03-L</code> → left；B-026 名称无左右，由列与后缀得 right</td></tr>
+<tr><td>车型</td><td>识别品牌（Volvo、Freightliner、Kenworth、Peterbilt、International、Mack、Western Star…），其后到年份前为车型，<code>YYYY-YYYY</code> 为年份区间；车型大小写归一</td><td><code>Volvo VNL 2018-2023</code> → Volvo / VNL / 2018–2023；<code>Volvo VN</code> 与 <code>Volvo VNL</code> 是不同车型</td></tr>
+<tr><td>尺寸</td><td>解析 <code>a x b x c 单位</code>（x/×/*），mm、in 换算为 cm；无单位 → 按 cm 并记 <code>UNIT_ASSUMED</code>。作为<strong>包装尺寸</strong>，比较时排序后比（摆放方向不同不算冲突）</td><td><code>1220 x 750 x 70 mm</code> → (122, 75, 7)</td></tr>
+<tr><td>OE 号</td><td>按逗号、分号、斜杠、换行拆分；规范化为大写去空格/连字符/点；长度 &lt; 5 的不参与候选生成</td><td><code>OE-VNL-1001</code> → OEVNL1001</td></tr>
+<tr><td>价格 / 币种</td><td>去千分位与货币符号转 Decimal；币种 ISO-4217 校验；价格带 <code>$</code> 而无币种列 → USD 并记 <code>CURRENCY_INFERRED</code></td><td>—</td></tr>
+<tr><td>日期 / MOQ</td><td>Excel 日期、ISO、<code>YYYY/MM/DD</code>；<code>MM/DD/YYYY</code> 与 <code>DD/MM/YYYY</code> 无法区分时记 <code>AMBIGUOUS_DATE</code>；MOQ 取整数（“10 pcs” → 10）</td><td>—</td></tr>
+</tbody></table></div>
+
+<h3 id="flow-diff">4.4 增量比对</h3>
+<p>身份键：<code>(供应商, 供应商编号)</code>。对新文件的每一行：</p>
+<div class="table-wrap"><table>
+<thead><tr><th>状态</th><th>判定</th><th>动作</th></tr></thead>
+<tbody>
+<tr><td><span class="tag info">NEW</span></td><td>身份键从未出现</td><td>建条目与单成员产品，参与匹配</td></tr>
+<tr><td><span class="tag">UNCHANGED</span></td><td>原始行哈希与当前观察相同</td><td>只记录这次观察</td></tr>
+<tr><td><span class="tag ok">UPDATED</span></td><td>只有价格、币种、MOQ、报价日期、名称措辞变化（归一后关键属性不变）</td><td>追加新报价（旧报价 is_current=False），更新字段来源</td></tr>
+<tr><td><span class="tag bad">CONFLICT</span></td><td>关键属性（类别、位置、车型、尺寸、OE）变化</td><td>更新条目并写 <code>KEY_ATTR_CHANGED</code> Issue（新旧值）；该条目的所有候选重新评估，依赖旧证据的人工决定被重新打开</td></tr>
+<tr><td><span class="tag warn">DUPLICATE</span></td><td>同一文件中身份键重复出现</td><td>第一行生效，其余记 <code>DUPLICATE_KEY_IN_FILE</code></td></tr>
+<tr><td><span class="tag">NOT_IN_LATEST</span></td><td>该供应商上一版文件中有、这次没有</td><td>不删除，标 present_in_latest=False，写 info 级 Issue</td></tr>
+</tbody></table></div>
+<div class="callout"><p>“本次未出现”只在同一供应商导入的是<strong>全量表</strong>时有意义；导入命令提供 <code>--partial</code> 表示增补文件，此时不做缺失判定。</p></div>
+
+<h3 id="issues">4.5 异常类型</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>级别</th><th>代码</th></tr></thead>
+<tbody>
+<tr><td><span class="tag bad">error</span></td><td>UNPARSEABLE, MISSING_PART_NO, DUPLICATE_KEY_IN_FILE, INVALID_VALUE</td></tr>
+<tr><td><span class="tag warn">warning</span></td><td>MISSING_PRICE, MISSING_CURRENCY, MISSING_FITMENT, MISSING_DIMS, MISSING_POSITION, POSITION_INCONSISTENT, UNKNOWN_CATEGORY, KEY_ATTR_CHANGED, INSUFFICIENT_FOR_MATCHING, CLUSTER_CONFLICT, AMBIGUOUS_DATE</td></tr>
+<tr><td><span class="tag info">info</span></td><td>MISSING_OE, MISSING_MOQ, MISSING_QUOTE_DATE, CURRENCY_INFERRED, UNIT_ASSUMED, FITMENT_UNPARSED, NOT_IN_LATEST</td></tr>
+</tbody></table></div>
+<p>条目有新观察时，旧观察上的 open Issue 自动置为 resolved（备注“被批次 N 取代”），新观察重新产生。</p>
+
+<h2 id="match">5. 匹配规则</h2>
+<p>参数位于 <code>config/rules/matching.yaml</code>，含 <code>version</code>；每个候选记录生成它的规则版本。</p>
+
+<h3 id="blocking">5.1 候选生成（blocking）</h3>
+<p>只比较落在同一“块”里的条目，避免全量两两比较，同时<strong>跨供应商和同供应商内部都比较</strong>：</p>
+<ul>
+  <li>共有规范化 OE 号（长度 ≥ 5）；</li>
+  <li>相同类别 + 相同车型（make+model）；</li>
+  <li>相同排序后尺寸（容差内）。</li>
+</ul>
+<p>编号字符串（包括其中的数字）<strong>从不</strong>作为候选依据——样本中 <code>A-01-00</code>/<code>B01X</code> 的数字巧合只在前 12 行成立。</p>
+
+<h3 id="compare">5.2 字段比较</h3>
+<p>每个字段比较结果为 <code>equal</code>、<code>conflict</code>、<code>missing</code>（一方或双方缺）或 <code>n/a</code>（双方都没有且该类别不需要，如无左右之分的前格栅）：</p>
+<div class="table-wrap"><table>
+<thead><tr><th>字段</th><th>equal</th><th>conflict</th><th>权重</th><th>硬冲突</th></tr></thead>
+<tbody>
+<tr><td>OE</td><td>集合有交集</td><td>双方都有但无交集（软冲突 <code>OE_DIFFER</code>）</td><td>40</td><td>否</td></tr>
+<tr><td>类别</td><td>相同</td><td>不同</td><td>20</td><td>是</td></tr>
+<tr><td>车型</td><td>make+model 相同，且年份区间相同或一方缺年份</td><td>make/model 不同，或年份都有且不同</td><td>15</td><td>是</td></tr>
+<tr><td>尺寸</td><td>排序后每维差 ≤ 1 cm</td><td>超出容差</td><td>15</td><td>是</td></tr>
+<tr><td>位置</td><td>相同</td><td>left vs right</td><td>10</td><td>是</td></tr>
+<tr><td>名称</td><td colspan="2">rapidfuzz token_set_ratio，仅作弱证据加分（×5），从不单独触发或否决</td><td>5</td><td>否</td></tr>
+</tbody></table></div>
+<p><code>score</code> = 相等字段权重之和（名称按相似度折算）；<code>confidence</code> = score ÷ 所有适用字段的权重和（<strong>缺失字段也计入分母</strong>，只有 n/a 除外），因此“无 OE、仅属性一致”不会显示为高置信；存在硬冲突时置信度上限为 0.3（<code>conflict_confidence_cap</code>）。缺失字段列入 <code>missing</code>。</p>
+
+<h3 id="decide">5.3 分类决策</h3>
+<pre><code>shared_oe   = OE 相等（有交集）
+hard        = {类别, 车型, 尺寸, 位置} 中为 conflict 的字段
+required    = {类别, 车型, 尺寸} 都 equal，位置为 equal 或 n/a，且除 OE 外无任何缺失（含车型年份）
+
+if shared_oe 且 跨供应商:
+    无 hard 且 required  → auto_confirmed  (AUTO_OE_FULL_MATCH)
+    有 hard              → suspect  (SHARED_OE_CONFLICT)
+    否则                 → suspect  (SHARED_OE_INCOMPLETE)     # 缺字段
+elif 有 hard:
+    shared_oe（同供应商）→ suspect  (SHARED_OE_CONFLICT + SAME_SUPPLIER_DUP)
+    否则                 → auto_rejected (DIFFERENT_CATEGORY / POSITION / FITMENT / DIMS)
+elif shared_oe 或 (类别 equal 且 (车型 equal 或 尺寸 equal)):
+    → suspect，原因：OE_DIFFER（双方 OE 都有但不同）/ NO_OE_ATTR_MATCH（至少一方无 OE）
+      同供应商再加 SAME_SUPPLIER_DUP；缺关键字段再加 MISSING_KEY_FIELDS
+      # 同一供应商的两个编号可能是不同品质档：永不自动合并
+else:
+    → 不生成候选</code></pre>
+<ul>
+  <li><code>auto_confirmed</code> → status=accepted（decided_by=rule），可人工撤销。</li>
+  <li><code>suspect</code> → status=pending，进入待确认清单，排序按：共用 OE 冲突 &gt; 共用 OE 不完整 &gt; 无 OE 属性一致 &gt; 同供应商疑似；同级按置信度降序。</li>
+  <li><code>auto_rejected</code> → status=rejected（decided_by=rule），不进入人工清单，但在 Admin 中可查，用于说明“为什么没合并”。</li>
+  <li>条目只有类别、缺车型且缺尺寸 → 不生成候选，记 <code>INSUFFICIENT_FOR_MATCHING</code>（如 A-025），归入“待补充”。</li>
+</ul>
+<h4>建议动作模板（示例）</h4>
+<div class="table-wrap"><table>
+<thead><tr><th>原因码</th><th>建议动作</th></tr></thead>
+<tbody>
+<tr><td>SHARED_OE_CONFLICT</td><td>{oe} 同时出现在 {a}({a.category}) 与 {b}({b.category})，冲突字段：{fields}。请向供应商核对 OE 号是否录错；默认不合并。</td></tr>
+<tr><td>SHARED_OE_INCOMPLETE</td><td>共用 {oe}，但缺少 {missing}。请补充后重新导入，或确认合并。</td></tr>
+<tr><td>NO_OE_ATTR_MATCH</td><td>无共同 OE，类别/车型/尺寸一致。请查看图片或向供应商索要 OE 号后确认。</td></tr>
+<tr><td>OE_DIFFER</td><td>属性一致但 OE 号不同（{a.oe} vs {b.oe}）。可能是不同代次或替代件，请核对。</td></tr>
+<tr><td>SAME_SUPPLIER_DUP</td><td>同一供应商的两个编号属性一致，可能是重复录入或不同品质档，请向供应商确认。</td></tr>
+</tbody></table></div>
+
+<h3 id="cluster">5.4 聚类与防传递误合并</h3>
+<ul>
+  <li>所有 status=accepted 的候选（规则自动 + 人工确认）构成图，用并查集求连通分量，每个分量是一个产品。</li>
+  <li><strong>防传递</strong>：规则产生的合并边在合并两个分量前，检查跨分量的任意两条目：存在硬冲突，或<strong>来自同一供应商</strong>（同供应商不自动合并的规则在传递时同样生效），则不做该次合并，写 <code>CLUSTER_CONFLICT</code> Issue，把该边降为 suspect（优先级 1）。人工确认的合并边视为权威，不受此检查限制。</li>
+  <li>例：增量演示中 A-028 与 A-005 同属供应商 A、共用 OE-VNL-1005；B-005 ↔ A-028 满足自动归一，但会把 A-005 与 A-028 带进同一产品，因此被暂停并交人工确认。</li>
+  <li><strong>以簇为节点生成候选</strong>：已属于同一产品的条目，对外只保留得分最高的一对候选，避免同一问题出现 N 次。复核一次即对整个簇生效。</li>
+  <li><strong>编号稳定</strong>：分量沿用其中最早创建的产品编号；被并入的产品标 retired 并指向 merged_into；拆分时新分量获得新编号。</li>
+</ul>
+
+<h3 id="samples">5.5 样本数据上的结果（由自动化测试守护）</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>记录</th><th>结果</th><th>原因</th></tr></thead>
+<tbody>
+<tr><td>A-001~A-012 ↔ B-001~B-012</td><td><span class="tag ok">auto_confirmed ×12</span></td><td>AUTO_OE_FULL_MATCH</td></tr>
+<tr><td>A-021 ↔ B-019（OE-SHARED-01）</td><td><span class="tag warn">suspect</span></td><td>SHARED_OE_CONFLICT：类别、尺寸</td></tr>
+<tr><td>A-022 ↔ B-020（OE-SHARED-02）</td><td><span class="tag warn">suspect</span></td><td>SHARED_OE_CONFLICT：类别（housing vs housing_cap）、尺寸</td></tr>
+<tr><td>A-023 ↔ B-021（OE-SHARED-03）</td><td><span class="tag warn">suspect</span></td><td>SHARED_OE_CONFLICT：位置</td></tr>
+<tr><td>A-026 ↔ B-025（OE-CONFLICT-01）</td><td><span class="tag warn">suspect</span></td><td>SHARED_OE_CONFLICT：类别（尺寸相同也不合并）</td></tr>
+<tr><td>A-027 ↔ B-026（OE-CONFLICT-02）</td><td><span class="tag warn">suspect</span></td><td>SHARED_OE_CONFLICT：位置</td></tr>
+<tr><td>{A-012, B-012} ↔ B-013（OE-VN-1010）</td><td><span class="tag warn">suspect</span></td><td>SHARED_OE_CONFLICT：位置；缺尺寸、年份</td></tr>
+<tr><td>A-013 ↔ {A-001, B-001} 等</td><td><span class="tag warn">suspect</span></td><td>NO_OE_ATTR_MATCH + SAME_SUPPLIER_DUP</td></tr>
+<tr><td>A-008 ↔ A-010</td><td><span class="tag">auto_rejected</span></td><td>DIFFERENT_CATEGORY（尺寸、车型相同）</td></tr>
+<tr><td>B-013 ↔ B-018</td><td><span class="tag warn">suspect</span></td><td>NO_OE_ATTR_MATCH + SAME_SUPPLIER_DUP + MISSING_KEY_FIELDS：同为右侧格栅、Volvo VN，但 B-013 缺尺寸与年份</td></tr>
+<tr><td>A-001 ↔ A-021、A-003 ↔ A-023 等</td><td><span class="tag warn">suspect</span></td><td>OE_DIFFER + SAME_SUPPLIER_DUP：属性全同但 OE 号不同</td></tr>
+<tr><td>A-025</td><td><span class="tag bad">待补充</span></td><td>INSUFFICIENT_FOR_MATCHING：缺车型、尺寸、OE</td></tr>
+<tr><td>A-024 / B-022</td><td><span class="tag bad">异常</span></td><td>MISSING_PRICE、MISSING_CURRENCY</td></tr>
+</tbody></table></div>
+
+<p>合计（仅导入 A、B 两份原始文件）：53 个条目 → 41 个归一产品，其中 <strong>12 个已确认归一</strong>（24 个条目）、24 个独立产品、5 个待补充；<strong>48 条疑似重复</strong>待人工确认（其中 6 条共用 OE 冲突排在最前）；49 对被规则排除（可在 Admin 查看）。</p>
+<h3 id="increment-result">5.6 增量演示结果</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>导入</th><th>导入报告</th><th>匹配变化</th></tr></thead>
+<tbody>
+<tr><td>供应商A报价表_v2.xlsx</td><td>更新 3、冲突 1、新增 3、未变 22、本次未出现 1</td><td>A-006 尺寸变化 → 与 B-006 的自动归一重新变为疑似（共用 OE 冲突），产品被拆分；A-028 被防传递规则拦下（簇冲突 1）；A-029 与 B-018 成为跨供应商疑似；A-030 “Hood Latch” 类别未知 → 待补充</td></tr>
+<tr><td>供应商C目录.pdf（2 页）</td><td>新增 8、文件内重复 1</td><td>6 条经共用 OE 自动归一到已有产品（含 mm 单位换算、“Air Cleaner Housing” 同义词）；C-1003-R 标为右侧但 OE-VNL-1003 在 A/B 中是左侧 → 共用 OE 冲突；C-2005 缺尺寸 → 共用 OE 但不完整；C-9001 名称只有 “Grille” → 待补充</td></tr>
+</tbody></table></div>
+
+<h2 id="review">6. 人工复核与回写</h2>
+<ul>
+  <li><strong>匹配运行方式</strong>：每次导入或复核后，对全库按分块（blocking）重新评估候选（Demo 规模下为毫秒到秒级）；规则产生的决定随之刷新，人工决定按 evidence_hash 保护。</li>
+  <li><strong>Web 复核队列</strong> <code>/review/</code>：按优先级列出 pending/needs_info 的候选；详情页并排展示双方的归一属性、字段比较结果（相等/冲突/缺失着色）、原始行与来源定位、建议动作；操作：<em>确认合并</em>、<em>不是同一产品</em>、<em>待补充资料</em>，必须填写备注才能对存在硬冲突的候选确认合并。</li>
+  <li><strong>撤销 / 拆分</strong>：产品详情页列出归一依据（每条已合并的边），进入该边选择“不是同一产品”，即改为 rejected（decided_by=human）并重新聚类；Admin 中也可批量操作。</li>
+  <li><strong>离线回写</strong>：<code>review_list.xlsx</code> 的“疑似重复”表带 <code>candidate_id</code> 与空白的 <code>decision</code>（merge / reject / needs_info）、<code>note</code> 列；“异常”表带 <code>issue_id</code> 与 <code>decision</code>（resolve / ignore）。<code>import_review</code> 命令校验后回写，未知 ID 或非法取值逐行报错、整体不提交。</li>
+  <li><strong>人工决定优先</strong>：候选保存 <code>evidence_hash</code>（双方当前归一属性的哈希）。重跑规则时，如果人工决定的 evidence_hash 未变，保持人工决定；变了则重新打开（status=pending），并写 ReviewDecision(action=reopened, via=system) 说明“某字段由 X 变为 Y”。</li>
+  <li><strong>审计</strong>：所有决定（包括规则自动决定的首次产生、系统重新打开）写入 ReviewDecision，含操作人、渠道、备注、决定时的快照。</li>
+</ul>
+
+<h2 id="maint">7. 持续维护</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>场景</th><th>做法</th></tr></thead>
+<tbody>
+<tr><td>新供应商 / 新格式</td><td><code>import_source 文件 --supplier C --dry-run</code> 查看表头识别与未识别列 → 在 <code>column_aliases.yaml</code> 补别名，或写一个映射文件 → 正式导入</td></tr>
+<tr><td>同一供应商新版本</td><td>直接 <code>import_source</code>；查看导入报告中的 UPDATED / CONFLICT / NOT_IN_LATEST；在复核队列处理重新打开的候选</td></tr>
+<tr><td>新品类或名称写法</td><td>在 <code>synonyms.yaml</code> 增加类别及同义短语；运行 <code>run_matching --all</code></td></tr>
+<tr><td>调整权重与阈值</td><td>修改 <code>matching.yaml</code> 并提升 <code>version</code>；<code>run_matching --all</code>；规则决定的候选按新规则刷新，人工决定不受影响</td></tr>
+<tr><td>人工确认回写</td><td>Web 复核，或导出 <code>review_list.xlsx</code> 填写后 <code>import_review</code></td></tr>
+<tr><td>规则变更评估</td><td><code>run_matching --all --dry-run</code> 输出分类变化摘要（多少对从 suspect 变 auto 等），确认后再正式执行</td></tr>
+</tbody></table></div>
+
+<h2 id="tradeoffs">8. 取舍汇总</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>决定</th><th>得到</th><th>放弃</th></tr></thead>
+<tbody>
+<tr><td>自动归一仅限跨供应商 + 共用 OE + 关键属性全一致</td><td>误合并风险极低，可解释</td><td>召回率：大量真实重复需要人工确认</td></tr>
+<tr><td>同供应商内部永不自动合并</td><td>避免把同一家的不同品质档合并</td><td>同家重复录入需要人工清理</td></tr>
+<tr><td>包装尺寸只作辅助证据、排序后比较</td><td>摆放方向不同不误报冲突</td><td>无法区分真正长宽互换的不同件（需其他字段兜底）</td></tr>
+<tr><td>不换算币种</td><td>不引入汇率的不确定性</td><td>不能直接给出“最便宜的供应商”</td></tr>
+<tr><td>以簇为节点生成候选</td><td>复核量可控</td><td>候选对的“代表对”可能随聚类变化；人工否决按成员对记录以保持有效</td></tr>
+<tr><td>不使用 pandas 读取</td><td>保留原始文本与精确行号</td><td>多写少量解析代码</td></tr>
+<tr><td>规则参数外置 YAML</td><td>业务侧可调、带版本</td><td>配置错误需校验（加载时 schema 检查）</td></tr>
+</tbody></table></div>
+
+<h2 id="limits">9. 已知局限</h2>
+<ul>
+  <li>PDF 只支持带文本层的表格；扫描件需 OCR（未实现），此时会产生 UNPARSEABLE 异常提示人工处理。</li>
+  <li>车型解析基于品牌词表与“车型 + 年份”格式；非常规写法（如 “VNL 670/780”）可能只识别到品牌，此时车型比较结果为 missing（不会误判为相等）。</li>
+  <li>同义词为有限词表；未知类别不会参与自动归一，只会进入“待补充”。</li>
+  <li>多个复核人同时处理同一候选时后提交者覆盖（有审计记录）；未实现乐观锁。</li>
+</ul>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<div class="table-wrap"><table>
+<thead><tr><th>批次</th><th>文件</th><th>供应商</th><th>状态</th><th>行</th><th>新增</th><th>更新</th><th>冲突</th><th>未变</th><th>本次未出现</th><th>时间</th></tr></thead>
+<tbody>
+{% for b in batches %}
+<tr><td><a href="{% url 'ingestion:batch_detail' b.pk %}">#{{ b.pk }}</a></td>
+<td>{{ b.source_file.original_name }}</td><td>{{ b.source_file.supplier.code }}</td>
+<td>{% if b.status == "succeeded" %}<span class="tag ok">成功</span>{% elif b.status == "duplicate" %}<span class="tag warn">重复文件</span>{% else %}<span class="tag bad">{{ b.get_status_display }}</span>{% endif %}</td>
+<td>{{ b.stats.rows|default:"—" }}</td><td>{{ b.stats.new|default:0 }}</td><td>{{ b.stats.updated|default:0 }}</td>
+<td>{{ b.stats.conflict|default:0 }}</td><td>{{ b.stats.unchanged|default:0 }}</td><td>{{ b.stats.not_in_latest|default:0 }}</td>
+<td class="muted">{{ b.created|date:"Y-m-d H:i" }}</td></tr>
+{% empty %}<tr><td colspan="11" class="muted">暂无导入</td></tr>{% endfor %}
+</tbody></table></div>

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load vp %}
+{% block title %}{{ item }} · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>{{ item.supplier.name }} · {{ item.supplier_part_no }}</h1>
+<p>所属产品 <a href="{% url 'catalog:product_detail' item.product.code %}">{{ item.product.code }}</a> · 原始记录 {{ item.source_ref|default:"—" }} ·
+当前来源 <span class="mono">{{ item.current_record.locator_label }}</span>
+（<a href="{% url 'catalog:source_download' item.current_record.batch.source_file.pk %}">下载原件</a>）</p>
+
+<h2>字段级来源</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>字段</th><th>原始值</th><th>归一值</th><th>来源定位</th><th>来源列</th><th>批次</th><th>状态</th></tr></thead>
+<tbody>
+{% for fv in values %}
+<tr{% if not fv.is_current %} class="muted"{% endif %}>
+  <td>{{ fv.field|field_label }}</td><td>{{ fv.raw_value|default:"（空）" }}</td><td class="mono">{{ fv.normalized_value|show }}</td>
+  <td class="mono">{{ fv.source_record.locator_label }}</td><td>{{ fv.source_column }}</td>
+  <td><a href="{% url 'ingestion:batch_detail' fv.source_record.batch_id %}">#{{ fv.source_record.batch_id }}</a></td>
+  <td>{% if fv.is_current %}<span class="tag ok">当前</span>{% else %}<span class="tag">历史</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+
+<h2>报价历史</h2>
+<div class="table-wrap"><table><thead><tr><th>价格</th><th>币种</th><th>MOQ</th><th>报价日期</th><th>来源</th><th>状态</th></tr></thead><tbody>
+{% for o in offers %}<tr><td>{{ o.price|default_if_none:"缺失" }}</td><td>{{ o.currency|default:"缺失" }}</td><td>{{ o.moq|default_if_none:"—" }}</td><td>{{ o.quote_date|default_if_none:"—" }}</td><td class="mono">{{ o.source_record.locator_label }}</td><td>{% if o.is_current %}<span class="tag ok">当前</span>{% else %}<span class="tag">历史</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+
+<h2>原始行（每次导入的观察）</h2>
+{% for r in observations %}
+<div class="box"><strong>批次 #{{ r.batch_id }}</strong> · {{ r.get_diff_status_display }} · <span class="mono">{{ r.locator_label }}</span>
+<pre class="raw">{% for k, v in r.raw_data %}{{ k }}: {{ v }}
+{% endfor %}</pre></div>
+{% endfor %}
+
+<h2>匹配关系</h2>
+<ul>{% for c in candidates %}<li><a href="{% url 'matching:candidate_detail' c.pk %}">#{{ c.pk }}</a> {{ c.item_a }} ↔ {{ c.item_b }} · {{ c.get_classification_display }} · {{ c.get_status_display }}</li>{% empty %}<li class="muted">无</li>{% endfor %}</ul>
+
+<h2>异常</h2>
+<ul>{% for i in issues %}<li><span class="tag {% if i.status == 'open' %}warn{% endif %}">{{ i.code }}</span> {{ i.message }} · {{ i.get_status_display }}{% if i.resolution_note %}（{{ i.resolution_note }}）{% endif %}</li>{% empty %}<li class="muted">无</li>{% endfor %}</ul>
+{% endblock %}

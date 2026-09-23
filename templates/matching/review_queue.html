@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load vp %}
+{% block title %}复核队列 · 零件资料归一化{% endblock %}
+{% block content %}
+<h1>复核队列</h1>
+<form class="filters" method="get">
+  <select name="status">
+    <option value="open" {% if status == "open" %}selected{% endif %}>待确认 + 待补充资料</option>
+    {% for key, label in statuses %}<option value="{{ key }}" {% if key == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="reason"><option value="">全部原因</option>
+    {% for key, label in reason_labels.items %}<option value="{{ key }}" {% if key == reason %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button type="submit">筛选</button>
+  <a href="{% url 'exports:download' 'review' %}">导出为 xlsx（可离线填写后回写）</a>
+</form>
+<p class="muted">{{ page.paginator.count }} 条 · 按优先级（共用 OE 冲突最先）和置信度排序</p>
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>优先级</th><th>A</th><th>B</th><th>原因</th><th>冲突</th><th>缺失</th><th>置信度</th><th>状态</th></tr></thead>
+<tbody>
+{% for c in page %}
+<tr>
+<td><a href="{% url 'matching:candidate_detail' c.pk %}">{{ c.pk }}</a></td><td>{{ c.priority }}</td>
+<td>{{ c.item_a }}<br><span class="muted">{{ c.item_a.name }}</span></td>
+<td>{{ c.item_b }}<br><span class="muted">{{ c.item_b.name }}</span></td>
+<td>{% for r in c.reasons %}<span class="tag {% if r == 'SHARED_OE_CONFLICT' or r == 'CLUSTER_CONFLICT' %}bad{% else %}warn{% endif %}">{{ r }}</span> {% endfor %}</td>
+<td>{% for x in c.conflicts %}{{ x.field|field_label }} {% endfor %}</td>
+<td>{% for m in c.missing %}{{ m|field_label }} {% endfor %}</td>
+<td>{{ c.confidence }}</td>
+<td>{{ c.get_status_display }}{% if c.decided_by == "human" %} <span class="tag info">人工</span>{% endif %}</td>
+</tr>
+{% empty %}<tr><td colspan="9" class="muted">没有待确认的候选</td></tr>{% endfor %}
+</tbody></table></div>
+<p class="pager">{% if page.has_previous %}<a href="?status={{ status }}&reason={{ reason }}&page={{ page.previous_page_number }}">上一页</a>{% endif %}
+第 {{ page.number }} / {{ page.paginator.num_pages }} 页
+{% if page.has_next %}<a href="?status={{ status }}&reason={{ reason }}&page={{ page.next_page_number }}">下一页</a>{% endif %}</p>
+{% endblock %}
