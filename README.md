@@ -21,7 +21,7 @@ docker exec -i <pg容器> psql -U <超级用户> -d postgres -v pw=<密码> < sc
 uv sync
 cp .env.example .env          # 修改 DATABASE_URL
 uv run python manage.py migrate
-uv run python manage.py demo --with-increment --reviewer reviewer --password <密码>
+uv run python manage.py demo --with-increment --noinput --reviewer reviewer --password <密码>
 uv run python manage.py runserver    # http://127.0.0.1:8000/ ，用上面的复核账号登录
 uv run pytest
 ```
@@ -43,7 +43,7 @@ docker compose exec web python manage.py createsuperuser
 | `export_data [--out 目录] [--only master offers review report]` | 导出 xlsx |
 | `import_review <review_list.xlsx> --reviewer 姓名` | 回写离线填写的复核决定，全部通过才提交 |
 | `make_demo_samples` | 生成增量演示文件（`samples/demo/`） |
-| `demo [--with-increment]` | 清空业务数据后跑完整演示流程 |
+| `demo [--with-increment] [--noinput]` | 清空业务数据后跑完整演示流程（脚本 / Docker 中必须加 `--noinput`） |
 | `reset_data [--noinput]` | 只清空业务数据（保留用户账号），之后可手动导入 |
 
 可调规则都在 `config/rules/`：列别名 `column_aliases.yaml`、类别同义词 `synonyms.yaml`、匹配参数 `matching.yaml`（带版本号）。

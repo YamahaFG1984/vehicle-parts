@@ -37,7 +37,7 @@
 </div>
 
 <h2 id="samples">结果样例</h2>
-<p>运行 <code>python manage.py demo --with-increment</code> 后由系统导出的文件（导入供应商 A、B 原始报价表，再导入 A 的新版本和供应商 C 的 PDF 目录）：</p>
+<p>运行 <code>python manage.py demo --with-increment --noinput</code> 后由系统导出的文件（导入供应商 A、B 原始报价表，再导入 A 的新版本和供应商 C 的 PDF 目录）：</p>
 <div class="table-wrap"><table>
 <thead><tr><th>文件</th><th>内容</th></tr></thead>
 <tbody>
@@ -51,7 +51,7 @@
 <pre><code>uv sync
 cp .env.example .env            # 填写 DATABASE_URL
 uv run python manage.py migrate
-uv run python manage.py demo --with-increment --reviewer reviewer --password 你的密码
+uv run python manage.py demo --with-increment --noinput --reviewer reviewer --password 你的密码
 uv run python manage.py runserver   # http://127.0.0.1:8000/</code></pre>
 <p>服务器上可直接 <code>docker compose up -d</code>（包含 PostgreSQL 与 Web 服务），详见 <a href="implementation.html#deploy">部署</a>。</p>
 

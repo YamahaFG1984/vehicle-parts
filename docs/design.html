@@ -339,16 +339,16 @@ price / currency / moq / quote_date / source_ref / brand / category ...</code></
 <thead><tr><th>状态</th><th>判定</th><th>动作</th></tr></thead>
 <tbody>
 <tr><td><span class="tag info">NEW</span></td><td>身份键从未出现</td><td>建条目与单成员产品，参与匹配</td></tr>
-<tr><td><span class="tag">UNCHANGED</span></td><td>原始行哈希与当前观察相同</td><td>只记录这次观察</td></tr>
-<tr><td><span class="tag ok">UPDATED</span></td><td>只有价格、币种、MOQ、报价日期、名称措辞变化（归一后关键属性不变）</td><td>追加新报价（旧报价 is_current=False），更新字段来源</td></tr>
-<tr><td><span class="tag bad">CONFLICT</span></td><td>关键属性（类别、位置、车型、包装尺寸、OE）变化</td><td>条目采用新值，旧值留作历史；写 <code>KEY_ATTR_CHANGED</code> Issue（新旧值）交人核对；该条目的所有候选按新值重新评估，依赖旧证据的人工决定被重新打开</td></tr>
+<tr><td><span class="tag">UNCHANGED</span></td><td>原始行哈希<strong>和列映射</strong>都与当前观察相同（映射改过的行即使原始内容没变也会重新处理，例如补上了漏映射的价格列）</td><td>只记录这次观察</td></tr>
+<tr><td><span class="tag ok">UPDATED</span></td><td>价格、币种、MOQ、报价日期、名称措辞、<strong>包装尺寸</strong>或列映射变化（类别、位置、车型、OE 不变）；包装尺寸变化另记 <code>PACKAGE_DIMS_CHANGED</code> 提示</td><td>追加新报价（旧报价 is_current=False），更新字段来源</td></tr>
+<tr><td><span class="tag bad">CONFLICT</span></td><td>关键属性（类别、位置、车型、OE）变化；包装尺寸是辅助证据，与匹配口径一致，不算冲突</td><td>条目采用新值，旧值留作历史；写 <code>KEY_ATTR_CHANGED</code> Issue（新旧值）交人核对；该条目的所有候选按新值重新评估，依赖旧证据的人工决定被重新打开</td></tr>
 <tr><td><span class="tag warn">DUPLICATE</span></td><td>同一文件中身份键重复出现</td><td>第一行生效，其余记 <code>DUPLICATE_KEY_IN_FILE</code></td></tr>
 <tr><td><span class="tag">NOT_IN_LATEST</span></td><td>该供应商上一版文件中有、这次没有</td><td>不删除，标 present_in_latest=False，写 info 级 Issue</td></tr>
 </tbody></table></div>
 <div class="callout"><p>“本次未出现”只在同一供应商导入的是<strong>全量表</strong>时有意义；导入命令提供 <code>--partial</code> 表示增补文件，此时不做缺失判定。</p></div>
 <div class="tradeoff"><h4>关键属性变化：以最新资料为准 + 留痕 + 交人核对</h4><dl>
 <dt>选择</dt><dd>冲突行的新值立即成为当前值；旧值保留在字段历史中；同时开 <code>KEY_ATTR_CHANGED</code> 并重新评估相关归一。</dd>
-<dt>理由</dt><dd>供应商资料本来就会修订（换包装、更正年款），若新值先挂起等待确认，报价和属性会长期停在旧值上，查询结果过时；而“最新值 + 历史 + 异常 + 重评”既不丢信息，又能让真正有问题的变化浮现到复核队列。包装尺寸已降为软证据，所以换纸箱不会拆散已归一的产品。</dd>
+<dt>理由</dt><dd>供应商资料本来就会修订（更正年款、改 OE），若新值先挂起等待确认，报价和属性会长期停在旧值上，查询结果过时；而“最新值 + 历史 + 异常 + 重评”既不丢信息，又能让真正有问题的变化浮现到复核队列。包装尺寸是软证据：换纸箱只算“更新”，不会拆散已归一的产品。</dd>
 <dt>取舍</dt><dd>如果新资料本身是错的，在人工处理前系统会短暂按错误值匹配；风险由硬冲突否决、防传递和 KEY_ATTR_CHANGED 异常共同兜底。</dd>
 </dl></div>
 
@@ -358,7 +358,7 @@ price / currency / moq / quote_date / source_ref / brand / category ...</code></
 <tbody>
 <tr><td><span class="tag bad">error</span></td><td>UNPARSEABLE, MISSING_PART_NO, DUPLICATE_KEY_IN_FILE, INVALID_VALUE</td></tr>
 <tr><td><span class="tag warn">warning</span></td><td>MISSING_PRICE, MISSING_CURRENCY, MISSING_FITMENT, MISSING_DIMS, MISSING_POSITION, POSITION_INCONSISTENT, UNKNOWN_CATEGORY, KEY_ATTR_CHANGED, INSUFFICIENT_FOR_MATCHING, SUSPECTED_NAME_ERROR, CLUSTER_CONFLICT, AMBIGUOUS_DATE</td></tr>
-<tr><td><span class="tag info">info</span></td><td>MISSING_OE, MISSING_MOQ, MISSING_QUOTE_DATE, CURRENCY_INFERRED, UNIT_ASSUMED, FITMENT_UNPARSED, PART_NO_FORMAT_CHANGED, NOT_IN_LATEST</td></tr>
+<tr><td><span class="tag info">info</span></td><td>MISSING_OE, MISSING_MOQ, MISSING_QUOTE_DATE, CURRENCY_INFERRED, UNIT_ASSUMED, FITMENT_UNPARSED, PART_NO_FORMAT_CHANGED, PACKAGE_DIMS_CHANGED, NOT_IN_LATEST</td></tr>
 </tbody></table></div>
 <p>条目有新观察时，旧观察上的 open Issue 自动置为 resolved（备注“被批次 N 取代”），新观察重新产生。</p>
 
@@ -469,13 +469,13 @@ else:
 <div class="table-wrap"><table>
 <thead><tr><th>导入</th><th>导入报告</th><th>匹配变化</th></tr></thead>
 <tbody>
-<tr><td>供应商A报价表_v2.xlsx</td><td>更新 3、冲突 1、新增 3、未变 22、本次未出现 1</td><td>A-006 只换了包装尺寸（151x91x14 → 20）→ 与 B-006 仍保持归一（包装尺寸是软证据），同时开 KEY_ATTR_CHANGED 交人核对；A-028 被防传递规则拦下（簇冲突 1）；A-029 与 B-018 成为跨供应商疑似；A-030 “Hood Latch” 类别未知 → 待补充</td></tr>
+<tr><td>供应商A报价表_v2.xlsx</td><td>更新 4、冲突 1、新增 3、未变 21、本次未出现 1</td><td>A-006 只换了包装（151x91x14 → 20）→ 算“更新”，与 B-006 仍保持归一，记 PACKAGE_DIMS_CHANGED 提示；A-012 车型年份由 2004-2017 改为 2006-2017 → “冲突”，与 B-012 的年份只部分重叠，原自动归一被重新打开交人判断；A-028 被防传递规则拦下（簇冲突 1）；A-029 与 B-018 成为跨供应商疑似；A-030 “Hood Latch” 类别未知 → 待补充</td></tr>
 <tr><td>供应商C目录.pdf（2 页）</td><td>新增 8、文件内重复 1</td><td>6 条经共用 OE 自动归一到已有产品（C-1001、C-1002、C-2003、C-2004、C-2005、C-2006；含 mm 换算、“Air Cleaner Housing” 同义词；C-2005 缺包装尺寸不影响归一）；C-1003-R 标为右侧但 OE-VNL-1003 在 A/B 中是左侧 → 共用 OE 冲突；C-9001 名称只有 “Grille” → 待补充</td></tr>
 </tbody></table></div>
 
 <h2 id="review">6. 人工复核与回写</h2>
 <ul>
-  <li><strong>匹配运行方式</strong>：每次导入或复核后，对全库按分块（blocking）重新评估候选（Demo 规模下为毫秒到秒级）；规则产生的决定随之刷新，人工决定按 evidence_hash 保护。</li>
+  <li><strong>匹配运行方式</strong>：每次导入或复核后，先<strong>按当前规则重新标准化</strong>每个条目当前原始行上已存的字段值（同义词、车型品牌等规则改了之后，已导入的数据随之更新，变化照样留字段历史，不再适用的异常自动关闭），再对全库按分块（blocking）重新评估候选（Demo 规模下为毫秒到秒级）；规则产生的决定随之刷新，人工决定按 evidence_hash 保护。</li>
   <li><strong>Web 复核队列（按疑似组）</strong> <code>/review/</code>：把相互关联的待确认关系（以已归一的产品为节点求连通分量）归为一组，一页内并排对照组内所有记录（名称、位置、车型、包装尺寸、OE、报价、异常、来源），每一对选 确认合并 / 不是同一产品 / 待补充资料，一次提交；也可“整组判为不是同一产品”。存在硬冲突的合并必须填写备注。提交后自动重新聚类并进入下一组。</li>
   <li><strong>逐对视图</strong> <code>/review/pairs/</code> 与候选详情页：字段比较着色（相等/冲突/缺失/部分重叠）、双方原始行与来源定位、建议动作、审计记录。</li>
   <li><strong>撤销 / 拆分</strong>：产品详情页列出归一依据（每条已合并的边），进入该边选择“不是同一产品”，即改为 rejected（decided_by=human）并重新聚类；Admin 中也可批量操作。</li>
@@ -491,10 +491,10 @@ else:
 <tr><td>新供应商 / 新格式</td><td>网页：上传后在预览页逐列调整映射、必要时填写表头行，确认导入。命令行：<code>import_source 文件 --supplier C --dry-run</code> 查看表头识别与未识别列 → 在 <code>column_aliases.yaml</code> 补别名，或写一个映射文件 → 正式导入。导入失败不会留下归档，改好后可直接重导。</td></tr>
 <tr><td>已导入的文件想按新映射/新规则重来</td><td><code>import_source 文件 --reprocess</code>（网页预览页勾选“重新处理”）：新建批次、复用已归档原件，按新映射逐行比对</td></tr>
 <tr><td>同一供应商新版本</td><td>直接 <code>import_source</code>；查看导入报告中的 UPDATED / CONFLICT / NOT_IN_LATEST；在复核队列处理重新打开的候选</td></tr>
-<tr><td>新品类或名称写法</td><td>在 <code>synonyms.yaml</code> 增加类别及同义短语；运行 <code>run_matching --all</code></td></tr>
-<tr><td>调整权重与阈值</td><td>修改 <code>matching.yaml</code> 并提升 <code>version</code>；<code>run_matching --all</code>；规则决定的候选按新规则刷新，人工决定不受影响</td></tr>
+<tr><td>新品类或名称写法</td><td>在 <code>synonyms.yaml</code> 增加类别及同义短语；运行 <code>run_matching</code>：会先用新规则重新标准化已导入的条目（例：补上 “hood emblem” 后，原来类别未知的记录得到类别，UNKNOWN_CATEGORY 自动关闭），再重新匹配</td></tr>
+<tr><td>调整权重与阈值</td><td>修改 <code>matching.yaml</code> 并提升 <code>version</code>；<code>run_matching</code>；规则决定的候选按新规则刷新，人工决定不受影响</td></tr>
 <tr><td>人工确认回写</td><td>Web 复核，或导出 <code>review_list.xlsx</code> 填写后 <code>import_review</code></td></tr>
-<tr><td>规则变更评估</td><td><code>run_matching --all --dry-run</code> 输出分类变化摘要（多少对从 suspect 变 auto 等），确认后再正式执行</td></tr>
+<tr><td>规则变更评估</td><td><code>run_matching --dry-run</code> 输出分类变化摘要（多少对从 suspect 变 auto 等），确认后再正式执行</td></tr>
 </tbody></table></div>
 
 <h2 id="tradeoffs">8. 取舍汇总</h2>
@@ -532,6 +532,9 @@ else:
 <tr><td>编号身份按原始写法</td><td>按规范化写法，写法变化记提示</td></tr>
 <tr><td>车型年份必须完全相等</td><td>相同=相等；部分重叠=交人判断；不重叠=冲突</td></tr>
 <tr><td>关闭自动归一后原因被错标为“缺关键信息”</td><td>新增 SHARED_OE_FULL_MATCH 原因</td></tr>
+<tr><td>（第二轮审查）改了映射后重新处理，行被判为“未变”而跳过；补了同义词后运行 run_matching，已导入条目不更新</td><td>“未变”要求原始行和列映射都相同；run_matching 开头按当前规则重新标准化所有条目（保留字段历史）；两个复现写成回归测试</td></tr>
+<tr><td>（第二轮审查）只改包装尺寸在导入报告里算“冲突”，与匹配口径不一致</td><td>包装尺寸变化算“更新”并记 PACKAGE_DIMS_CHANGED 提示</td></tr>
+<tr><td>（第二轮审查）demo 在脚本 / Docker 中等待确认输入而卡住</td><td>非交互环境直接报错并提示加 <code>--noinput</code>；文档命令均已加上</td></tr>
 </tbody></table></div>
 </main>
 </div>

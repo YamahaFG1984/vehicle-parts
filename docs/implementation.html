@@ -64,7 +64,7 @@ cp .env.example .env
 
 # 4) 初始化
 uv run python manage.py migrate
-uv run python manage.py createsuperuser   # 或 demo --reviewer 名字 --password 密码</code></pre>
+uv run python manage.py createsuperuser   # 或 demo --noinput --reviewer 名字 --password 密码</code></pre>
 <p>Python 3.12+（uv 会按锁文件准备环境；Docker 镜像使用 3.13）。<code>scripts/create_db.sql</code> 创建角色 <code>vehicle_parts</code>（带 <code>CREATEDB</code>，供测试建临时库）与同名数据库，幂等可重复执行。</p>
 
 <h3>服务器</h3>
@@ -120,7 +120,7 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 
 <section class="step" id="s5">
 <h3>步骤 5 · 匹配引擎与聚类</h3>
-<p><strong>产出</strong>：<code>apps/matching/rules.py</code>（加载 YAML、字段比较、分类、原因码、建议动作）、<code>engine.py</code>（blocking、候选落库与人工决定保护、并查集聚类与防传递、以簇为节点去重、产品编号稳定）、<code>issues.py</code>、<code>services.py</code>（人工决定）、命令 <code>run_matching [--all] [--dry-run]</code>、<code>config/rules/matching.yaml</code>。</p>
+<p><strong>产出</strong>：<code>apps/matching/rules.py</code>（加载 YAML、字段比较、分类、原因码、建议动作）、<code>engine.py</code>（blocking、候选落库与人工决定保护、并查集聚类与防传递、以簇为节点去重、产品编号稳定）、<code>issues.py</code>、<code>services.py</code>（人工决定）、命令 <code>run_matching [--dry-run]</code>、<code>config/rules/matching.yaml</code>。</p>
 <p><strong>DoD</strong>：端到端测试 <code>tests/test_samples_e2e.py</code> 断言 <a href="design.html#samples">设计文档 5.5</a> 的每一行（含 B-025 / B-022 的疑似品名错误）；包装尺寸只作软证据、车型年份部分重叠交人判断（<code>tests/test_rules.py</code>）；重跑匹配结果稳定（幂等）；人工否决后重跑不再提出，改动一方资料后重新打开。</p>
 </section>
 
@@ -139,7 +139,7 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 <section class="step" id="s8">
 <h3>步骤 8 · 演示素材、一键演示与文档收尾</h3>
 <p><strong>产出</strong>：命令 <code>make_demo_samples</code>（生成 <code>samples/demo/供应商A报价表_v2.xlsx</code> 与 <code>samples/demo/供应商C目录.pdf</code>）、<code>demo [--with-increment]</code>、README；导出结果复制到 <code>docs/samples/</code>；文档按实现回填。</p>
-<p>A v2 相对原表：A-001 调价、A-002 改 MOQ、A-003 调价与日期（UPDATED ×3）；A-006 尺寸变化（CONFLICT，原自动归一被重新打开）；新增 A-028（同 OE 同属性 → 同供应商疑似）、A-029（与 B-018 无 OE 属性一致 → 疑似）、A-030（未知类别 → 待补充）；删除 A-027（NOT_IN_LATEST）。</p>
+<p>A v2 相对原表：A-001 调价、A-002 改 MOQ、A-003 调价与日期、A-006 换包装尺寸（UPDATED ×4，A-006 仍保持归一并记 PACKAGE_DIMS_CHANGED）；A-012 车型年份改为 2006-2017（CONFLICT，与 B-012 只部分重叠，原自动归一被重新打开）；新增 A-028（同 OE 同属性 → 同供应商疑似）、A-029（与 B-018 无 OE 属性一致 → 疑似）、A-030（未知类别 → 待补充）；删除 A-027（NOT_IN_LATEST）。</p>
 <p>C 的 PDF：两页（第 2 页续表无表头，沿用第 1 页）、不同表头写法（Part # / OEM # / Carton Dimensions…）、含品牌列；含 mm 单位尺寸、只有 <code>$</code> 的价格、CAD 币种、同义名称 “Air Cleaner Housing”、与已有 OE 对应但左右相反的记录、只写 “Grille” 的模糊名称、同一编号在文件中出现两次。</p>
 <p>实际结果见 <a href="design.html#increment-result">设计文档 5.6</a>。</p>
 <p><strong>DoD</strong>：<code>uv run pytest</code> 全绿；<code>demo --with-increment</code> 从空库跑通并生成四个导出文件。</p>
@@ -147,10 +147,11 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 
 <h2 id="demo">演示脚本</h2>
 <ol>
-  <li><code>uv run python manage.py demo --reviewer reviewer --password …</code>：清空业务数据 → 导入 A、B → 匹配 → 导出，并创建复核账号。讲解导入报告与异常。</li>
+  <li><code>uv run python manage.py demo --noinput --reviewer reviewer --password …</code>：清空业务数据 → 导入 A、B → 匹配 → 导出，并创建复核账号。讲解导入报告与异常。</li>
   <li><code>runserver</code>，搜索 <code>OE-VNL-1001</code> → 产品详情：两个品牌号、两条报价（USD/USD、不同 MOQ）→ 点开尺寸字段看来源。</li>
   <li>复核队列（按疑似组）：打开 VNL 前格栅这一组，组内并排对照 → A-021 ↔ B-019（OE-SHARED-01）选“不是同一产品”、A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；再到产品页演示“拆分”。</li>
-  <li><code>import_source samples/demo/供应商A报价表_v2.xlsx --supplier A</code>：展示 UPDATED / CONFLICT / NEW / NOT_IN_LATEST；A-006 只换了包装，仍与 B-006 保持归一，同时出现“关键属性变化”异常；A-028 被防传递拦下。</li>
+  <li><code>import_source samples/demo/供应商A报价表_v2.xlsx --supplier A</code>：展示 UPDATED / CONFLICT / NEW / NOT_IN_LATEST；A-006 只换了包装算“更新”，仍与 B-006 保持归一；A-012 改了年款算“冲突”，归一被重新打开；A-028 被防传递拦下。</li>
+  <li>规则调整演示：在 <code>config/rules/synonyms.yaml</code> 为 A-030 “Hood Latch” 加一个类别，运行 <code>run_matching --dry-run</code> 看到“按新规则重新标准化”的变化，再正式运行；A-030 得到类别，UNKNOWN_CATEGORY 自动关闭。</li>
   <li>网页上传 <code>samples/demo/供应商C目录.pdf</code>（供应商 C）：在预览页看识别出的列映射与每行预计状态，确认导入；讲 PDF 页码定位、续页沿用表头、mm 换算、币种推断。</li>
   <li><code>export_data</code>：打开 review_list.xlsx，填写 decision 后 <code>import_review</code> 回写。</li>
 </ol>
@@ -160,7 +161,7 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 <pre><code>cp .env.example .env     # 设置 DJANGO_SECRET_KEY、POSTGRES_PASSWORD、DJANGO_ALLOWED_HOSTS
 docker compose up -d --build
 docker compose exec web python manage.py createsuperuser
-docker compose exec web python manage.py demo --with-increment   # 可选：演示数据</code></pre>
+docker compose exec web python manage.py demo --with-increment --noinput   # 可选：演示数据</code></pre>
 <ul>
   <li><code>db</code>：postgres:16，数据卷 <code>pgdata</code>，healthcheck 就绪后才启动 web。</li>
   <li><code>web</code>：python:3.12-slim + uv 安装锁定依赖；入口脚本执行 <code>migrate</code>、<code>collectstatic</code> 后启动 gunicorn；<code>media</code> 卷保存原件归档。</li>
@@ -188,8 +189,8 @@ uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapp
 <h3>调整规则</h3>
 <ol>
   <li>修改 <code>config/rules/matching.yaml</code>（权重、容差、自动确认条件）或 <code>synonyms.yaml</code>，提升 <code>version</code>。</li>
-  <li><code>run_matching --all --dry-run</code> 查看分类变化摘要。</li>
-  <li><code>run_matching --all</code> 正式执行；人工决定不受影响，只有证据变化才会重新打开。</li>
+  <li><code>run_matching --dry-run</code> 查看会被重新标准化的条目与分类变化摘要。</li>
+  <li><code>run_matching</code> 正式执行：先按新规则重新标准化所有已导入条目（字段历史保留、不再适用的异常自动关闭），再重新匹配；人工决定不受影响，只有证据变化才会重新打开。</li>
 </ol>
 <h3>人工确认回写</h3>
 <ul>

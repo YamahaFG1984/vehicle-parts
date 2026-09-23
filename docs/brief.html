@@ -46,7 +46,7 @@
 <div class="table-wrap"><table>
 <thead><tr><th>交付要求</th><th>交付物</th></tr></thead>
 <tbody>
-<tr><td>1. 可运行 Demo</td><td>本仓库（Django 5.2 + PostgreSQL）。本机：<code>uv run python manage.py demo --with-increment</code> 后 <code>runserver</code>；服务器：<code>docker compose up -d --build</code>。步骤见 <a href="implementation.html#env">环境准备</a>、<a href="implementation.html#deploy">部署</a>。</td></tr>
+<tr><td>1. 可运行 Demo</td><td>本仓库（Django 5.2 + PostgreSQL）。本机：<code>uv run python manage.py demo --with-increment --noinput</code> 后 <code>runserver</code>；服务器：<code>docker compose up -d --build</code>。步骤见 <a href="implementation.html#env">环境准备</a>、<a href="implementation.html#deploy">部署</a>。</td></tr>
 <tr><td>2. 简短说明</td><td>本页第 2~4 节；详细版见 <a href="design.html#model">数据模型</a>、<a href="design.html#flow">处理流程</a>、<a href="design.html#match">匹配规则</a>、<a href="design.html#review">人工复核</a>。</td></tr>
 <tr><td>3. 处理结果样例</td><td><a href="samples/master_data.xlsx">master_data.xlsx</a>（归一产品、成员品牌号、字段来源）、<a href="samples/supplier_offers.xlsx">supplier_offers.xlsx</a>（各供应商分别报价）、<a href="samples/import_report.xlsx">import_report.xlsx</a>（导入与增量报告）</td></tr>
 <tr><td>3. 异常 / 待确认清单</td><td><a href="samples/review_list.xlsx">review_list.xlsx</a>：“疑似重复”表（触发原因、冲突字段、缺失信息、置信度、建议动作）+“异常清单”表；黄色 decision / note 列可直接填写回写。</td></tr>
@@ -95,9 +95,11 @@
 <tr><td>表头写法不同但在别名表内</td><td>自动映射列；未识别列保留原值并在报告中列出。网页上传先预览，不对可逐列改映射</td><td>A 的 <code>Supplier SKU</code> / B 的 <code>Brand Number</code> / C 的 <code>Part #</code></td></tr>
 <tr><td>名称写法、单位、符号差异</td><td>归一化：类别、左右、车型年份、mm→cm、<code>$</code>→USD（推断会记提示）</td><td><code>Side Grille, Left side</code> = <code>Left Side Grille</code>；<code>1220 x 750 x 70 mm</code> = <code>122 x 75 x 7 cm</code></td></tr>
 <tr><td>同一文件再次导入</td><td>已成功导入过 → 按 sha256 识别为重复，不产生任何变化；当初没识别出数据的文件可以直接重导；<code>--reprocess</code> 可按新映射重新处理</td><td>重复导入 A 原表</td></tr>
+<tr><td>改了列映射后重新处理同一文件</td><td>原始行没变但映射变了的行会按新映射更新（补上漏掉的价格列等）</td><td><code>--reprocess</code> 或网页预览页勾选“重新处理”</td></tr>
+<tr><td>补了同义词 / 改了规则</td><td><code>run_matching</code> 先按新规则重新标准化已导入的条目，再重新匹配；字段历史保留，不再适用的异常自动关闭</td><td>补上 “hood emblem” 后，原来类别未知的记录得到类别</td></tr>
 <tr><td>编号写法变化</td><td>按规范化编号识别为同一条目，记“编号写法变化”提示</td><td><code>A-03-L</code> 改写为 <code>A03L</code></td></tr>
 <tr><td>新资料中的新增 / 未变 / 报价变化</td><td>新增建档；报价追加为新的一条，旧报价保留为历史</td><td>A v2 中 A-001 调价、A-002 改 MOQ</td></tr>
-<tr><td><strong>自动归一</strong></td><td>仅当<strong>跨供应商</strong>、<strong>共用 OE</strong>，且类别、车型（含年份）、位置<strong>全部存在并一致</strong>；包装尺寸只作辅助（不同也只是提示）</td><td>A-001 ↔ B-001 等 12 对；C-1001 等 6 条并入已有产品；A-006 换纸箱后仍保持归一</td></tr>
+<tr><td><strong>自动归一</strong></td><td>仅当<strong>跨供应商</strong>、<strong>共用 OE</strong>，且类别、车型（含年份）、位置<strong>全部存在并一致</strong>；包装尺寸只作辅助（不同也只是提示）</td><td>A-001 ↔ B-001 等 12 对；C-1001 等 6 条并入已有产品；A-006 换纸箱只算“更新”，仍保持归一</td></tr>
 <tr><td><strong>自动排除</strong></td><td>无共同 OE，且类别 / 位置 / 车型有硬冲突：不进人工队列，但在 Admin 可查排除理由</td><td>A-008 空滤壳 vs A-010 风扇护罩（同车型同纸箱）；左侧格栅 vs 右侧格栅</td></tr>
 </tbody></table></div>
 <h3>必须人工判断</h3>
@@ -111,8 +113,8 @@
 <tr><td>同一供应商的两个编号</td><td>可能是重复录入，也可能是不同品质档</td><td>A-005 vs A-028（同 OE 同属性）</td></tr>
 <tr><td>会造成传递合并</td><td>A≈B、B≈C 不代表 A≈C</td><td>B-005 ↔ A-028 会把 A-005、A-028 带进同一产品，被暂停</td></tr>
 <tr><td>品名与包装尺寸矛盾</td><td>可能是品名录错，也可能是尺寸录错</td><td>B-025、B-022 标为 Bug Screen，包装却与同车型多条 Front Grille 一致 → 疑似品名错误</td></tr>
-<tr><td>车型年份仅部分重叠</td><td>可能是同一件的数据不严谨，也可能不是</td><td>2018-2023 vs 2019-2023</td></tr>
-<tr><td>已归一记录的关键属性变化</td><td>新资料不一定对</td><td>A-006 包装尺寸变化：保持归一，开“关键属性变化”交人核对</td></tr>
+<tr><td>车型年份仅部分重叠</td><td>可能是同一件的数据不严谨，也可能不是</td><td>A v2 把 A-012 改为 2006-2017，与 B-012 的 2004-2017 只部分重叠 → 原归一被重新打开</td></tr>
+<tr><td>已归一记录的关键属性变化</td><td>新资料不一定对</td><td>A-012 车型年份变化：导入记为“冲突”，开“关键属性变化”，相关归一重新评估</td></tr>
 <tr><td>缺字段、类别无法识别、位置来源矛盾、日期有歧义</td><td>系统不猜测填充</td><td>A-025 缺车型尺寸 OE；A-030 “Hood Latch”；C-9001 只写 “Grille”</td></tr>
 <tr><td>撤销一条自动归一</td><td>规则也可能错</td><td>产品页进入该关系，选“不是同一产品”即拆分</td></tr>
 </tbody></table></div>
@@ -168,7 +170,7 @@
 <tbody>
 <tr><td>新供应商 / 新格式</td><td>网页 <code>/imports/</code> 上传后先预览，可逐列调整映射、指定表头行，确认后入库；命令行 <code>import_source 文件 --supplier D --dry-run</code> 预览列识别 → 未识别的列在 <code>config/rules/column_aliases.yaml</code> 补别名，或写 <code>--mapping</code> 映射文件 → 正式导入。没识别出数据时导入直接失败、不留归档，改好后重导即可；已导入的文件可 <code>--reprocess</code> 按新映射重新处理。</td></tr>
 <tr><td>同一供应商的新版本</td><td>直接导入：系统按“供应商 + 编号”判定 新增 / 未变 / 更新 / 冲突 / 本次未出现（不删除）；关键属性变化会重新评估相关归一，并进入复核队列。增补文件加 <code>--partial</code>，不做“未出现”判定。</td></tr>
-<tr><td>规则调整</td><td>改 <code>synonyms.yaml</code>（新品类、新写法）或 <code>matching.yaml</code>（权重、容差、自动归一条件）并提升 version → <code>run_matching --dry-run</code> 查看会变化的候选 → <code>run_matching</code> 正式执行；人工决定不受影响。</td></tr>
+<tr><td>规则调整</td><td>改 <code>synonyms.yaml</code>（新品类、新写法）或 <code>matching.yaml</code>（权重、容差、自动归一条件）并提升 version → <code>run_matching --dry-run</code> 查看会变化的条目与候选 → <code>run_matching</code> 正式执行：先按新规则重新标准化已导入的条目（保留字段历史），再重新匹配；人工决定在证据未变时不受影响。</td></tr>
 <tr><td>人工确认回写</td><td>在线 <code>/review/</code>；或离线 <code>export_data --only review</code> → 填写 → <code>import_review</code>。回写后自动重新聚类。</td></tr>
 <tr><td>规则沉淀</td><td>复核中反复出现的写法补进别名 / 同义词表，下次由规则直接识别，人工量逐步下降。</td></tr>
 </tbody></table></div>
@@ -178,7 +180,7 @@
 <thead><tr><th>阶段</th><th>结果</th></tr></thead>
 <tbody>
 <tr><td>导入 A（27 行）+ B（26 行）</td><td>53 个条目 → 41 个归一产品：<span class="tag ok">已确认归一 12</span> <span class="tag">独立产品 23</span> <span class="tag bad">待补充 6</span>；<span class="tag warn">疑似重复 50 对，归为 7 组</span>（其中共用 OE 冲突 6 对排在最前）；规则排除 46 对；B-025、B-022 被标为疑似品名错误</td></tr>
-<tr><td>导入 A v2</td><td>更新 3 · 冲突 1 · 新增 3 · 未变 22 · 本次未出现 1；A-006 只换了包装，仍与 B-006 保持归一，并开“关键属性变化”交人核对；A-028 被防传递拦下</td></tr>
+<tr><td>导入 A v2</td><td>更新 4 · 冲突 1 · 新增 3 · 未变 21 · 本次未出现 1；A-006 只换了包装，算“更新”并仍与 B-006 保持归一；A-012 车型年份变化算“冲突”，与 B-012 的归一被重新打开；A-028 被防传递拦下</td></tr>
 <tr><td>导入 C 的 PDF（2 页）</td><td>新增 8 · 文件内重复 1；6 条经共用 OE 并入已有产品（C-1001、C-1002、C-2003、C-2004、C-2005、C-2006）；C-1003-R（右侧，却用了左侧件的 OE）进入复核；C-9001 “Grille” 待补充</td></tr>
 </tbody></table></div>
 <p>逐条结果见 <a href="design.html#samples">设计文档 5.5</a>、<a href="design.html#increment-result">5.6</a>，完整数据见上方样例文件。</p>
@@ -189,7 +191,7 @@
   <li><strong>原件与字段来源</strong>（2 分钟）：搜索 <code>OE-VNL-1001</code> → 产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
   <li><strong>判断依据、风险控制、人工确认入口</strong>（3 分钟）：复核队列按组打开 VNL 前格栅这一组（组内并排对照）→ 把 A-021 ↔ B-019（OE-SHARED-01，类别冲突）选“不是同一产品”，A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；产品页演示拆分；Admin 看被排除的 A-008 / A-010。</li>
   <li><strong>自动 vs 人工</strong>（1 分钟）：对照本页第 3 节，指出刚才哪些是规则自动处理、哪些是人工决定（审计记录里可见）。</li>
-  <li><strong>持续维护</strong>（2 分钟）：<code>import_source samples/demo/供应商A报价表_v2.xlsx</code>（更新 / 冲突 / 未出现；A-006 换纸箱仍保持归一但被标出）→ 网页上传 C 的 PDF，在预览页看列映射后确认导入 → 导出 <code>review_list.xlsx</code> 填一行后 <code>import_review</code> 回写。</li>
+  <li><strong>持续维护</strong>（2 分钟）：<code>import_source samples/demo/供应商A报价表_v2.xlsx</code>（更新 / 冲突 / 未出现：A-006 换纸箱只算更新，A-012 改年款被重新打开）→ 网页上传 C 的 PDF，在预览页看列映射后确认导入 → 在 <code>synonyms.yaml</code> 给 A-030 “Hood Latch” 补一个类别，运行 <code>run_matching</code>，看它从“待补充”变为有类别 → 导出 <code>review_list.xlsx</code> 填一行后 <code>import_review</code> 回写。</li>
 </ol>
 <p>现场新资料的处理方式（提取错误、编号冲突、规格缺失、疑似重复）见 <a href="implementation.html#live">面试现场的新资料</a>。</p>
 </main>
