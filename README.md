@@ -4,6 +4,7 @@ Django 5.2 + PostgreSQL。系统把供应商的 Excel / PDF / CSV 资料导入�
 
 文档（可直接发布到 GitHub Pages，入口 `docs/index.html`）：
 
+- [交付说明](docs/brief.html)：按交付要求逐条对应，先看这页
 - [PRD](docs/prd.html)：需求、验收标准、样本数据风险清单
 - [设计文档](docs/design.html)：架构、数据模型、流程、匹配规则，以及各项取舍
 - [分步实施](docs/implementation.html)：搭建、演示、部署、维护手册
@@ -43,5 +44,6 @@ docker compose exec web python manage.py createsuperuser
 | `import_review <review_list.xlsx> --reviewer 姓名` | 回写离线填写的复核决定，全部通过才提交 |
 | `make_demo_samples` | 生成增量演示文件（`samples/demo/`） |
 | `demo [--with-increment]` | 清空业务数据后跑完整演示流程 |
+| `reset_data [--noinput]` | 只清空业务数据（保留用户账号），之后可手动导入 |
 
 可调规则都在 `config/rules/`：列别名 `column_aliases.yaml`、类别同义词 `synonyms.yaml`、匹配参数 `matching.yaml`（带版本号）。
