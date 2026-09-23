@@ -15,6 +15,14 @@ from apps.core import rules
 
 KEY_FIELDS = ("category", "position", "fitment", "dims", "oe_numbers")
 
+# Every code normalize_record() can emit: these are recomputed whenever a row is re-normalized.
+NORMALIZER_CODES = {
+    "UNKNOWN_CATEGORY", "INVALID_VALUE", "POSITION_INCONSISTENT", "MISSING_POSITION",
+    "FITMENT_UNPARSED", "MISSING_FITMENT", "UNIT_ASSUMED", "MISSING_DIMS", "MISSING_OE",
+    "CURRENCY_INFERRED", "MISSING_PRICE", "MISSING_CURRENCY", "MISSING_MOQ", "AMBIGUOUS_DATE",
+    "MISSING_QUOTE_DATE", "MISSING_PART_NO",
+}
+
 ISO_CURRENCIES = {
     "USD", "EUR", "GBP", "CAD", "MXN", "CNY", "RMB", "JPY", "AUD", "CHF", "HKD", "SGD",
     "KRW", "INR", "BRL", "SEK", "NOK", "DKK", "PLN", "TWD", "NZD",
@@ -352,7 +360,7 @@ class NormalizedRecord:
     normalized: dict = field(default_factory=dict)  # field -> JSON-able normalized value
 
     def key_attrs(self) -> dict:
-        """The attributes whose change makes an import a CONFLICT and re-opens matches."""
+        """Attributes that form the matching evidence fingerprint (a change re-opens decisions)."""
         return {
             "category": self.category,
             "position": self.position,

@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.catalog.models import SupplierItem
-from apps.core.reset import reset_business_data
+from apps.core.reset import confirm, reset_business_data
 from apps.exports.exporters import export_all
 from apps.ingestion.services import import_source
 from apps.matching.engine import run_matching
@@ -29,10 +29,10 @@ class Command(BaseCommand):
         parser.add_argument("--password", help="复核账号密码（与 --reviewer 一起使用）")
 
     def handle(self, *args, **opts):
-        if SupplierItem.objects.exists() and not opts["noinput"]:
-            answer = input("将清空所有导入、档案、候选与复核记录（用户账号保留）。继续？[y/N] ")
-            if answer.strip().lower() != "y":
-                raise CommandError("已取消")
+        if SupplierItem.objects.exists() and not confirm(
+                "将清空所有导入、档案、候选与复核记录（用户账号保留）。继续？[y/N] ",
+                noinput=opts["noinput"]):
+            raise CommandError("已取消")
         self.reset()
         steps = BASE + (INCREMENT if opts["with_increment"] else [])
         for rel, code, name in steps:

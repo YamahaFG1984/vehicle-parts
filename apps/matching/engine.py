@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 
+from apps.catalog import services as catalog_services
 from apps.catalog.models import Product, SupplierItem
 from apps.catalog.normalizers import Finding, category_label, dims_equal
 from apps.core import rules as rule_files
@@ -33,6 +34,7 @@ class MatchSummary:
     classification: Counter = field(default_factory=Counter)
     status: Counter = field(default_factory=Counter)
     reopened: int = 0
+    renormalized: int = 0
     cluster_conflicts: int = 0
     products_multi: int = 0
     products_single: int = 0
@@ -40,7 +42,7 @@ class MatchSummary:
 
     def as_text(self) -> str:
         return (
-            f"评估 {self.pairs_evaluated} 对；规则分类 {dict(self.classification)}；"
+            f"重新标准化 {self.renormalized} 条；评估 {self.pairs_evaluated} 对；规则分类 {dict(self.classification)}；"
             f"当前状态 {dict(self.status)}；重新打开 {self.reopened}；"
             f"簇冲突 {self.cluster_conflicts}；多成员产品 {self.products_multi}，"
             f"单成员产品 {self.products_single}"
@@ -146,6 +148,13 @@ RULE_STATUS = {
 
 def _run(cfg: dict, summary: MatchSummary, dry_run: bool) -> None:
     version = cfg["version"]
+    # 0) Re-apply the current synonyms/rules to every item's current row, so a rule change
+    #    (e.g. a new category phrase) reaches data that was imported earlier.
+    for item in SupplierItem.objects.select_related("current_record__batch"):
+        change = catalog_services.renormalize_item(item)
+        if change:
+            summary.renormalized += 1
+            summary.changes.append(f"按新规则重新标准化 {item}: {change['fields'] or change['attrs']}")
     items = list(SupplierItem.objects.select_related("supplier", "product", "current_record")
                  .prefetch_related("part_numbers"))
     views = {i.pk: ItemView.from_item(i) for i in items}

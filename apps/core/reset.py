@@ -30,3 +30,16 @@ def reset_business_data() -> int:
             if folder.is_dir() and not any(folder.iterdir()):
                 folder.rmdir()
     return len(files)
+
+
+def confirm(prompt: str, *, noinput: bool) -> bool:
+    """Ask on a terminal; refuse (instead of hanging) when there is no one to answer."""
+    import sys
+
+    from django.core.management.base import CommandError
+
+    if noinput:
+        return True
+    if not sys.stdin or not sys.stdin.isatty():
+        raise CommandError("当前不是交互式终端，无法确认清空数据；请加 --noinput 明确执行。")
+    return input(prompt).strip().lower() == "y"

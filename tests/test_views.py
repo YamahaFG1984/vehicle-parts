@@ -123,3 +123,18 @@ def test_group_merge_over_hard_conflict_needs_note(client, staff, imported, pair
     assert resp.status_code == 200 and "必须填写备注" in resp.context["error"]
     cand.refresh_from_db()
     assert cand.status == "pending"
+
+
+def test_demo_refuses_without_tty(db, monkeypatch):
+    import io
+
+    from django.core.management import CommandError, call_command
+
+    from apps.core.reset import confirm
+
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    with pytest.raises(CommandError, match="--noinput"):
+        confirm("?", noinput=False)
+    assert confirm("?", noinput=True)
+    with pytest.raises(CommandError, match="--noinput"):
+        call_command("reset_data")

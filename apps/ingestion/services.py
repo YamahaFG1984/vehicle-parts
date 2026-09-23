@@ -234,6 +234,13 @@ def import_source(path, supplier_code: str | None = None, *, supplier_name: str 
     return ImportResult(batch=batch, parse=parsed, stats=stats)
 
 
+def _same_observation(item, row: ParsedRow) -> bool:
+    """Unchanged = same raw row AND same column mapping. A corrected mapping (e.g. a price
+    column that was missed before) must be re-applied even though the raw row is identical."""
+    current = item.current_record
+    return current.row_hash == row.row_hash and current.mapped == row.mapped
+
+
 def _values(row: ParsedRow) -> dict:
     return {fld: entry["value"] for fld, entry in row.mapped.items()}
 
@@ -251,7 +258,7 @@ def _preview(supplier_code, parsed, normalized, existing_file) -> ImportResult:
             status = DIFF.DUPLICATE
         elif item is None:
             status = DIFF.NEW
-        elif item.current_record.row_hash == row.row_hash:
+        elif _same_observation(item, row):
             status = DIFF.UNCHANGED
         else:
             status = DIFF.CONFLICT if catalog.changed_key_attrs(item, rec) else DIFF.UPDATED
@@ -289,10 +296,11 @@ def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
             status = DIFF.DUPLICATE
         elif item is None:
             status = DIFF.NEW
-        elif item.current_record.row_hash == row.row_hash:
+        elif _same_observation(item, row):
             status = DIFF.UNCHANGED
         else:
             changed = catalog.changed_key_attrs(item, rec)
+            dims_change = catalog.changed_dims(item, rec)
             status = DIFF.CONFLICT if changed else DIFF.UPDATED
         counts[status.value] += 1
 
@@ -330,6 +338,12 @@ def _persist(batch, supplier, parsed, normalized, override, partial) -> dict:
             item.save(update_fields=["current_record", "present_in_latest", "modified"])
         else:
             old_part_no = item.supplier_part_no
+            if dims_change and not changed:
+                issue_service.record_findings([Finding(
+                    "PACKAGE_DIMS_CHANGED", "info", "package_dims",
+                    f"包装尺寸变化：{dims_change['old']} → {dims_change['new']}"
+                    "（包装尺寸是辅助证据，按更新处理，不影响已归一关系）",
+                    {"changes": {"dims": dims_change}})], item=item, record=record, batch=batch)
             catalog.update_item(item, record, rec, brand)
             issue_service.resolve_item_issues(
                 item, exclude_record=record, note=f"被批次 #{batch.pk} 的新资料取代")

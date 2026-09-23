@@ -101,3 +101,70 @@ def test_part_number_spelling_change_is_same_item(tmp_path):
     assert Issue.objects.filter(item=item, code="PART_NO_FORMAT_CHANGED").exists()
     assert item.field_values.filter(field="supplier_part_no", raw_value="A-03-L",
                                     is_current=False).exists()
+
+
+def test_reprocess_applies_corrected_mapping(odd_file):
+    # First import misses the price column: no offer, MISSING_PRICE open.
+    partial = {k: v for k, v in ODD_MAPPING.items() if k not in ("Preis", "Waehrung")}
+    import_source(odd_file, "X", override=MappingOverride(columns=partial))
+    item = SupplierItem.objects.get(supplier_part_no="X-100")
+    assert not item.offers.exists()
+    assert Issue.objects.filter(item=item, code="MISSING_PRICE", status="open").exists()
+    # Same file, same raw rows, corrected mapping: must be re-applied, not skipped as unchanged.
+    result = import_source(odd_file, "X", override=MappingOverride(columns=ODD_MAPPING),
+                           reprocess=True)
+    assert result.batch.stats.get("unchanged", 0) == 0
+    assert result.batch.stats["updated"] == 2
+    offer = item.offers.get(is_current=True)
+    assert (str(offer.price), offer.currency) == ("40.5000", "USD")
+    assert not Issue.objects.filter(item=item, code="MISSING_PRICE", status="open").exists()
+
+
+def test_reprocess_with_same_mapping_is_unchanged(odd_file):
+    import_source(odd_file, "X", override=MappingOverride(columns=ODD_MAPPING))
+    result = import_source(odd_file, "X", override=MappingOverride(columns=ODD_MAPPING),
+                           reprocess=True)
+    assert result.batch.stats["unchanged"] == 2
+
+
+def test_new_synonym_reaches_imported_data(tmp_path, settings):
+    """Maintenance path from the docs: add a phrase to synonyms.yaml, then run_matching."""
+    import shutil
+
+    import yaml
+
+    from apps.core import rules
+    from apps.matching.engine import run_matching
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Part No", "Description", "Fitment", "Package", "Price", "Currency"])
+    ws.append(["E-1", "Hood Emblem", "Volvo VNL 2018-2023", "20 x 10 x 3 cm", 9.5, "USD"])
+    path = tmp_path / "emblems.xlsx"
+    wb.save(path)
+    import_source(path, "E")
+    run_matching()
+    item = SupplierItem.objects.get(supplier_part_no="E-1")
+    assert item.category == ""
+    assert Issue.objects.filter(item=item, code="UNKNOWN_CATEGORY", status="open").exists()
+
+    rules_dir = tmp_path / "rules"
+    shutil.copytree(settings.RULES_DIR, rules_dir)
+    syn = yaml.safe_load((rules_dir / "synonyms.yaml").read_text(encoding="utf-8"))
+    syn["categories"]["hood_emblem"] = {"label": "Hood Emblem", "sided": False,
+                                        "phrases": ["hood emblem"]}
+    (rules_dir / "synonyms.yaml").write_text(yaml.safe_dump(syn, allow_unicode=True),
+                                             encoding="utf-8")
+    settings.RULES_DIR = rules_dir
+    try:
+        summary = run_matching()
+        item.refresh_from_db()
+        assert item.category == "hood_emblem"
+        assert summary.renormalized == 1
+        assert not Issue.objects.filter(item=item, code="UNKNOWN_CATEGORY", status="open").exists()
+        history = item.field_values.filter(field="name").order_by("created")
+        assert [fv.normalized_value for fv in history] == [None, "hood_emblem"]
+        assert [fv.is_current for fv in history] == [False, True]
+        assert run_matching().renormalized == 0  # idempotent
+    finally:
+        rules.reload()

@@ -23,8 +23,10 @@ def incremented(imported):
 
 def test_diff_counts(incremented):
     stats = incremented.batch.stats
+    # A-006's new carton is an update (package size is soft evidence); A-012's model years
+    # changed, which is a real conflict.
     assert (stats["updated"], stats["conflict"], stats["new"], stats["not_in_latest"],
-            stats["unchanged"]) == (3, 1, 3, 1, 22)
+            stats["unchanged"]) == (4, 1, 3, 1, 21)
 
 
 def test_price_update_keeps_history(incremented, item):
@@ -38,8 +40,19 @@ def test_package_change_keeps_merge_but_is_flagged(incremented, pair, item):
     assert cand.status == MC.Status.ACCEPTED
     assert "DIMS_DIFFER" in cand.reasons
     assert item("A-006").product_id == item("B-006").product_id
-    issue = Issue.objects.get(item=item("A-006"), code="KEY_ATTR_CHANGED", status="open")
+    assert not Issue.objects.filter(item=item("A-006"), code="KEY_ATTR_CHANGED").exists()
+    issue = Issue.objects.get(item=item("A-006"), code="PACKAGE_DIMS_CHANGED")
     assert issue.details["changes"]["dims"]["new"] == [151.0, 91.0, 20.0]
+
+
+def test_key_attribute_conflict_reopens_merge(incremented, pair, item):
+    # A-012: "Volvo VN 2004-2017" -> "Volvo VN 2006-2017". Years now only overlap with B-012.
+    issue = Issue.objects.get(item=item("A-012"), code="KEY_ATTR_CHANGED", status="open")
+    assert set(issue.details["changes"]) == {"fitment"}
+    cand = pair("A-012", "B-012")
+    assert cand.status == MC.Status.PENDING
+    assert "fitment_years_overlap" in cand.missing
+    assert item("A-012").product_id != item("B-012").product_id
 
 
 def test_missing_row_is_flagged_not_deleted(incremented, item):

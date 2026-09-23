@@ -87,3 +87,28 @@ def sync_system_findings(items: dict, findings: dict, *, codes) -> None:
         if (issue.item_id, issue.code) not in wanted or stale_row:
             issue.status, issue.resolution_note = Issue.Status.RESOLVED, SYSTEM_NOTE
             issue.save(update_fields=["status", "resolution_note", "modified"])
+
+
+RULES_NOTE = "[系统] 按新规则重新标准化后不再适用"
+
+
+def refresh_normalizer_findings(item, record, findings) -> None:
+    """After re-normalizing a row: close normalizer issues that no longer apply, open new ones."""
+    from apps.catalog.normalizers import NORMALIZER_CODES
+
+    wanted = {(f.code, f.field) for f in findings}
+    for issue in Issue.objects.filter(source_record=record, code__in=NORMALIZER_CODES,
+                                      status=Issue.Status.OPEN):
+        if (issue.code, issue.field) not in wanted:
+            issue.status, issue.resolution_note = Issue.Status.RESOLVED, RULES_NOTE
+            issue.save(update_fields=["status", "resolution_note", "modified"])
+    for f in findings:
+        issue, created = Issue.objects.get_or_create(
+            source_record=record, code=f.code, field=f.field,
+            defaults={"item": item, "severity": f.severity, "message": f.message,
+                      "details": f.details})
+        if not created and issue.status == Issue.Status.RESOLVED \
+                and issue.resolution_note == RULES_NOTE:
+            issue.status, issue.resolution_note = Issue.Status.OPEN, ""
+            issue.message, issue.details = f.message, f.details
+            issue.save()

@@ -15,7 +15,8 @@ A_CHANGES = {
     "A-001": {"Unit Price": 44.10, "Quote Date": "2026-09-20"},  # UPDATED: new price
     "A-002": {"MOQ": 10},  # UPDATED: MOQ
     "A-003": {"Unit Price": 49.90, "Quote Date": "2026-09-20"},  # UPDATED: new price
-    "A-006": {"Package Size": "151 x 91 x 20 cm"},  # CONFLICT: key attribute changed
+    "A-006": {"Package Size": "151 x 91 x 20 cm"},  # UPDATED: new carton (soft evidence)
+    "A-012": {"Truck Application": "Volvo VN 2006-2017"},  # CONFLICT: model years only overlap
 }
 A_REMOVED = {"A-027"}  # NOT_IN_LATEST
 A_ADDED = [

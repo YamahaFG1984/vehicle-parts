@@ -6,7 +6,7 @@ import hashlib
 import json
 
 from .models import FieldValue, PartNumber, Product, SupplierItem, SupplierOffer
-from .normalizers import NormalizedRecord, normalize_number
+from .normalizers import NormalizedRecord, normalize_number, normalize_record
 
 # Semantic fields whose raw value is tracked with provenance.
 TRACKED_FIELDS = [
@@ -14,6 +14,9 @@ TRACKED_FIELDS = [
     "package_dims", "oe_numbers", "price", "currency", "moq", "quote_date",
 ]
 OFFER_FIELDS = ("price", "currency", "moq", "quote_date")
+# A change in these makes an import row a CONFLICT. Package size is soft evidence (as in
+# matching), so a new carton is an UPDATE with a PACKAGE_DIMS_CHANGED note instead.
+CONFLICT_FIELDS = ("category", "position", "fitment", "oe_numbers")
 
 
 def attr_hash(key_attrs: dict) -> str:
@@ -32,7 +35,12 @@ def item_key_attrs(item: SupplierItem) -> dict:
 
 def changed_key_attrs(item: SupplierItem, rec: NormalizedRecord) -> dict:
     old, new = item_key_attrs(item), rec.key_attrs()
-    return {k: {"old": old[k], "new": new[k]} for k in old if old[k] != new[k]}
+    return {k: {"old": old[k], "new": new[k]} for k in CONFLICT_FIELDS if old[k] != new[k]}
+
+
+def changed_dims(item: SupplierItem, rec: NormalizedRecord) -> dict | None:
+    old, new = item_key_attrs(item)["dims"], rec.key_attrs()["dims"]
+    return {"old": old, "new": new} if old != new else None
 
 
 def _apply_attrs(item: SupplierItem, rec: NormalizedRecord, brand: str) -> None:
@@ -52,7 +60,8 @@ def _apply_attrs(item: SupplierItem, rec: NormalizedRecord, brand: str) -> None:
 
 
 def _sync_field_values(item, record, rec: NormalizedRecord) -> list[str]:
-    """Create a new current FieldValue for every field whose raw text changed. Returns fields."""
+    """New current FieldValue for every field whose raw text or normalized value changed
+    (the latter happens when rules change). Returns the changed fields."""
     current = {fv.field: fv for fv in item.field_values.filter(is_current=True)}
     changed = []
     for fld in TRACKED_FIELDS:
@@ -61,13 +70,14 @@ def _sync_field_values(item, record, rec: NormalizedRecord) -> list[str]:
         old = current.get(fld)
         if old is None and not raw:
             continue
-        if old is not None and old.raw_value == raw:
+        normalized = rec.normalized.get(fld)
+        if old is not None and old.raw_value == raw and old.normalized_value == normalized:
             continue
         if old is not None:
             old.is_current = False
             old.save(update_fields=["is_current", "modified"])
         FieldValue.objects.create(
-            item=item, field=fld, raw_value=raw, normalized_value=rec.normalized.get(fld),
+            item=item, field=fld, raw_value=raw, normalized_value=normalized,
             source_record=record, source_column=entry.get("column", ""),
         )
         changed.append(fld)
@@ -129,3 +139,33 @@ def update_item(item: SupplierItem, record, rec: NormalizedRecord, brand: str) -
     _sync_part_numbers(item, record, rec)
     _sync_offer(item, record, rec)
     return changed
+
+
+def renormalize_item(item: SupplierItem) -> dict | None:
+    """Re-apply the current rules to the item's current row (after synonyms or rules change).
+
+    Uses the values stored on that row, so no file is needed. Returns what changed, or None.
+    Field history is kept: changed normalized values get a new current FieldValue.
+    """
+    from apps.matching import issues as issue_service
+
+    record = item.current_record
+    override = (record.batch.mapping or {}).get("override") or {}
+    values = {fld: entry.get("value", "") for fld, entry in record.mapped.items()}
+    rec = normalize_record(values, override.get("sku_position_suffix"))
+    before = (item.attr_hash, item.category, item.position, item.fitment_label)
+    changed_attrs = changed_key_attrs(item, rec)
+    dims = changed_dims(item, rec)
+    _apply_attrs(item, rec, item.brand)
+    changed_fields = _sync_field_values(item, record, rec)
+    if before == (item.attr_hash, item.category, item.position, item.fitment_label) \
+            and not changed_fields:
+        return None
+    item.save()
+    _sync_part_numbers(item, record, rec)
+    _sync_offer(item, record, rec)
+    issue_service.refresh_normalizer_findings(item, record, rec.findings)
+    changes = dict(changed_attrs)
+    if dims:
+        changes["dims"] = dims
+    return {"fields": changed_fields, "attrs": changes}
