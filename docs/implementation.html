@@ -115,13 +115,13 @@ uv run python manage.py makemigrations --check --dry-run   # 无遗漏</code></p
 <pre><code>uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx --supplier A --dry-run
 uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx --supplier A
 uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx --supplier A   # 再次 → duplicate</code></pre>
-<p><strong>DoD</strong>：A 27 条、B 26 条；每个字段有 FieldValue 与定位；重复导入无副作用；原件 sha256 不变；异常列表与 PRD 第 7 节一致；导入失败时整个批次回滚。</p>
+<p><strong>DoD</strong>：A 27 条、B 26 条；每个字段有 FieldValue 与定位；重复导入无副作用；原件 sha256 不变；异常列表与 PRD 第 7 节一致；导入失败时整个批次回滚；<strong>识别不出任何数据行时导入失败且不归档</strong>，补好映射后同一文件可以重导；<code>--reprocess</code> 可对已成功导入的文件按新映射重新处理；编号按规范化写法识别（<code>A-03-L</code> = <code>A03L</code>）。测试见 <code>tests/test_import_robustness.py</code>。</p>
 </section>
 
 <section class="step" id="s5">
 <h3>步骤 5 · 匹配引擎与聚类</h3>
 <p><strong>产出</strong>：<code>apps/matching/rules.py</code>（加载 YAML、字段比较、分类、原因码、建议动作）、<code>engine.py</code>（blocking、候选落库与人工决定保护、并查集聚类与防传递、以簇为节点去重、产品编号稳定）、<code>issues.py</code>、<code>services.py</code>（人工决定）、命令 <code>run_matching [--all] [--dry-run]</code>、<code>config/rules/matching.yaml</code>。</p>
-<p><strong>DoD</strong>：端到端测试 <code>tests/test_samples_e2e.py</code> 断言 <a href="design.html#samples">设计文档 5.5</a> 的每一行；重跑匹配结果稳定（幂等）；人工否决后重跑不再提出，改动一方资料后重新打开。</p>
+<p><strong>DoD</strong>：端到端测试 <code>tests/test_samples_e2e.py</code> 断言 <a href="design.html#samples">设计文档 5.5</a> 的每一行（含 B-025 / B-022 的疑似品名错误）；包装尺寸只作软证据、车型年份部分重叠交人判断（<code>tests/test_rules.py</code>）；重跑匹配结果稳定（幂等）；人工否决后重跑不再提出，改动一方资料后重新打开。</p>
 </section>
 
 <section class="step" id="s6">
@@ -132,7 +132,7 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 
 <section class="step" id="s7">
 <h3>步骤 7 · 页面与 Admin</h3>
-<p><strong>产出</strong>：概览 <code>/</code>、<code>/search/</code>、<code>/products/&lt;code&gt;/</code>、<code>/items/&lt;id&gt;/</code>（字段来源、报价历史、每次导入的原始行）、<code>/review/</code> 与候选详情（字段对照 + 决定表单）、<code>/review/issues/</code>（异常处理）、<code>/imports/</code>（网页上传导入）、<code>/exports/&lt;key&gt;/</code>、<code>/sources/&lt;id&gt;/download/</code>、Admin（证据只读，候选可批量决定）。全站需登录。</p>
+<p><strong>产出</strong>：概览 <code>/</code>、<code>/search/</code>、<code>/products/&lt;code&gt;/</code>、<code>/items/&lt;id&gt;/</code>（字段来源、报价历史、每次导入的原始行）、<code>/review/</code>（按疑似组复核，一页对照、批量决定）、<code>/review/pairs/</code> 与候选详情（字段对照 + 决定表单）、<code>/review/issues/</code>（异常处理）、<code>/imports/</code>（上传 → 预览页调整列映射 → 确认入库）、<code>/exports/&lt;key&gt;/</code>、<code>/sources/&lt;id&gt;/download/</code>、Admin（证据只读，候选可批量决定）。全站需登录。</p>
 <p><strong>DoD</strong>：搜 <code>OE-VNL-1001</code>、<code>oevnl1001</code>、<code>B03L</code>、<code>grille</code>、<code>Volvo</code>、供应商 <code>B</code> 均有结果；视图测试覆盖 200/302/403 与表单提交。</p>
 </section>
 
@@ -149,9 +149,9 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 <ol>
   <li><code>uv run python manage.py demo --reviewer reviewer --password …</code>：清空业务数据 → 导入 A、B → 匹配 → 导出，并创建复核账号。讲解导入报告与异常。</li>
   <li><code>runserver</code>，搜索 <code>OE-VNL-1001</code> → 产品详情：两个品牌号、两条报价（USD/USD、不同 MOQ）→ 点开尺寸字段看来源。</li>
-  <li>复核队列：打开 OE-SHARED-01 候选，展示冲突字段与建议动作 → “不是同一产品”；打开 A-013 候选 → “确认合并”，A-013 并入 A-001 所在产品；再到产品页演示“拆分”。</li>
-  <li><code>import_source samples/demo/供应商A报价表_v2.xlsx --supplier A</code>：展示 UPDATED / CONFLICT / NEW / NOT_IN_LATEST；A-006 的产品被拆分并出现在复核队列。</li>
-  <li><code>import_source samples/demo/供应商C目录.pdf --supplier C</code>：PDF 页码定位、mm 换算、币种推断。</li>
+  <li>复核队列（按疑似组）：打开 VNL 前格栅这一组，组内并排对照 → A-021 ↔ B-019（OE-SHARED-01）选“不是同一产品”、A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；再到产品页演示“拆分”。</li>
+  <li><code>import_source samples/demo/供应商A报价表_v2.xlsx --supplier A</code>：展示 UPDATED / CONFLICT / NEW / NOT_IN_LATEST；A-006 只换了包装，仍与 B-006 保持归一，同时出现“关键属性变化”异常；A-028 被防传递拦下。</li>
+  <li>网页上传 <code>samples/demo/供应商C目录.pdf</code>（供应商 C）：在预览页看识别出的列映射与每行预计状态，确认导入；讲 PDF 页码定位、续页沿用表头、mm 换算、币种推断。</li>
   <li><code>export_data</code>：打开 review_list.xlsx，填写 decision 后 <code>import_review</code> 回写。</li>
 </ol>
 
@@ -181,7 +181,10 @@ docker compose exec web python manage.py demo --with-increment   # 可选：演�
 #   sheet: Sheet1
 #   header_row: 3
 #   columns: {"Mfr Part": supplier_part_no, "Desc": name, "Fits": fitment}
-uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapping.yaml</code></pre>
+uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapping.yaml
+# 已成功导入过的文件，想按新映射 / 新规则重新处理：
+uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapping.yaml --reprocess</code></pre>
+<p>也可以在网页 <code>/imports/</code> 上传：预览页直接逐列选择字段（留空 = 忽略），没识别出表头时填写表头行号后重新预览，确认后才入库。</p>
 <h3>调整规则</h3>
 <ol>
   <li>修改 <code>config/rules/matching.yaml</code>（权重、容差、自动确认条件）或 <code>synonyms.yaml</code>，提升 <code>version</code>。</li>
@@ -190,7 +193,7 @@ uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapp
 </ol>
 <h3>人工确认回写</h3>
 <ul>
-  <li>在线：<code>/review/</code> 逐条处理。</li>
+  <li>在线：<code>/review/</code> 按疑似组一页处理，也可逐对处理（<code>/review/pairs/</code>）。</li>
   <li>离线：<code>export_data --only review</code> → 在 <code>review_list.xlsx</code> 的 decision 列填写 <code>merge</code> / <code>reject</code> / <code>needs_info</code>（异常表填 <code>resolve</code> / <code>ignore</code>）→ <code>import_review review_list.xlsx --reviewer 姓名</code>。</li>
 </ul>
 
@@ -198,8 +201,9 @@ uv run python manage.py import_source 新文件.xlsx --supplier D --mapping mapp
 <div class="table-wrap"><table>
 <thead><tr><th>情况</th><th>系统表现</th><th>处理方式</th></tr></thead>
 <tbody>
-<tr><td>提取错误（表头不识别、PDF 无表格、值无法解析）</td><td><code>--dry-run</code> 列出未识别列；UNPARSEABLE / INVALID_VALUE 异常带页码行号</td><td>补别名或映射文件后重导；原件已归档，重导不会重复</td></tr>
+<tr><td>提取错误（表头不识别、PDF 无表格、值无法解析）</td><td>识别不出数据行时导入直接失败、不留归档，并提示下一步；网页预览列出未识别列与没找到表头的表的前几行；UNPARSEABLE / INVALID_VALUE 异常带页码行号</td><td>在预览页逐列选择字段或填写表头行号后确认；或命令行补别名 / 写 <code>--mapping</code> 后重导</td></tr>
 <tr><td>编号冲突（同 OE 不同件、同家编号重复）</td><td>SHARED_OE_CONFLICT / DUPLICATE_KEY_IN_FILE，默认不合并</td><td>复核队列中核对，写备注；需要时向供应商确认</td></tr>
+<tr><td>品名与规格矛盾</td><td>SUSPECTED_NAME_ERROR：包装尺寸与同车型另一类别的多条记录一致、却与同类都不同</td><td>向供应商核对品名或尺寸，修正后重新导入</td></tr>
 <tr><td>规格缺失</td><td>MISSING_* 异常；缺关键字段不自动归一，INSUFFICIENT_FOR_MATCHING</td><td>归入待补充；补齐后重新导入（CONFLICT/UPDATED 会自动触发重评）</td></tr>
 <tr><td>疑似重复</td><td>suspect 候选，含原因、冲突、缺失、建议动作</td><td>确认 / 否决 / 待补充，决定可审计、可撤销</td></tr>
 </tbody></table></div>

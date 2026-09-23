@@ -94,16 +94,16 @@
   <li>提取字段：原始编号 / 品牌号 / 供应商编号、名称、类别、位置、适配车型、OE/交叉参考号、包装尺寸、报价、币种、MOQ、报价日期；以及原始文件、工作表或页码、行号、列名。</li>
   <li>表头通过可配置的别名自动识别；也可提供显式映射文件。</li>
 </ul>
-<p><strong>验收</strong>：导入供应商 A（27 行）、B（26 行）全部生成记录；任一字段可查到文件、工作表、行、列与原值；原始文件 sha256 在全流程前后不变；同一文件重复导入被识别为“已导入”，不产生重复数据。</p>
+<p><strong>验收</strong>：导入供应商 A（27 行）、B（26 行）全部生成记录；表头识别不出时导入失败且不归档，补好映射后可重导；网页上传先预览并可调整列映射；任一字段可查到文件、工作表、行、列与原值；原始文件 sha256 在全流程前后不变；同一文件重复导入被识别为“已导入”，不产生重复数据。</p>
 
 <h3>F2 疑似同一产品识别与人工确认</h3>
 <ul>
   <li>记录分为三类：<span class="tag ok">已确认归一</span> <span class="tag warn">疑似重复</span> <span class="tag">独立产品 / 待补充</span>。</li>
   <li><strong>不得</strong>仅凭短编号、尺寸相同、名称相似或共同 OE 号自动合并。</li>
-  <li>每条疑似重复给出：触发原因、冲突字段（双方取值）、缺失信息、置信度、建议人工动作。</li>
+  <li>每条疑似重复给出：触发原因、冲突字段（双方取值）、缺失信息、置信度、建议人工动作；相互关联的疑似按组展示，一次对照处理。</li>
   <li>人工可：确认合并 / 判定不同 / 标记待补充；可撤销已确认的归一（拆分）。所有决定记审计日志。</li>
 </ul>
-<p><strong>验收</strong>：样本数据中 A-001~A-012 与 B-001~B-012 的 12 对自动归一；所有“共用 OE 但类型/左右/尺寸冲突”的记录对不被自动合并并出现在待确认清单中；“尺寸相同但类型不同”（如 A-008 空滤壳 vs A-010 风扇护罩）不被合并；缺字段的记录出现在异常清单。</p>
+<p><strong>验收</strong>：样本数据中 A-001~A-012 与 B-001~B-012 的 12 对自动归一；所有“共用 OE 但类型/左右/车型冲突”的记录对不被自动合并并出现在待确认清单中；“尺寸相同但类型不同”（如 A-008 空滤壳 vs A-010 风扇护罩）不被合并；缺字段的记录出现在异常清单。</p>
 
 <h3>F3 来源与报价</h3>
 <ul>
@@ -144,10 +144,11 @@
 <thead><tr><th>场景</th><th>样本</th><th>期望处理</th></tr></thead>
 <tbody>
 <tr><td>干净对应</td><td>A-001~A-012 ↔ B-001~B-012：OE、车型、位置、尺寸一致，名称写法不同</td><td><span class="tag ok">自动归一</span>，报价分列</td></tr>
+<tr><td>品名与包装尺寸矛盾</td><td>B-025 标为 Bug Screen，包装却是 Cascadia 前格栅的 151x91x14；B-022 标为 Bug Screen，包装是 Century 前格栅的 124x77x10</td><td><span class="tag bad">待补充</span>，疑似品名/类别错误，交人核对</td></tr>
 <tr><td>共用 OE，类型不同</td><td>OE-SHARED-01：A-021 Front Grille vs B-019 Bug Screen；OE-CONFLICT-01：A-026 vs B-025（尺寸还相同）</td><td><span class="tag warn">疑似</span>，冲突=类别，建议核对 OE，默认不合并</td></tr>
 <tr><td>共用 OE，名称相近但不是同件</td><td>OE-SHARED-02：A-022 Air Filter Housing vs B-020 Air Filter Housing Cap</td><td><span class="tag warn">疑似</span>，冲突=类别+尺寸</td></tr>
 <tr><td>共用 OE，左右冲突</td><td>OE-SHARED-03（A-023 左 vs B-021 右）、OE-CONFLICT-02（A-027 左 vs B-026 右，且 B 名称未写左右）、OE-VN-1010（A-012/B-012 左 vs B-013 右）</td><td><span class="tag warn">疑似</span>，冲突=位置</td></tr>
-<tr><td>尺寸相同，类型不同</td><td>A-008 Air Filter Housing 与 A-010 Fan Shroud 均为 121x22x92；B-022 Bug Screen 与 Century Front Grille 同尺寸；左右侧格栅同尺寸</td><td>自动排除（不进人工队列，但可查）</td></tr>
+<tr><td>尺寸相同，类型不同</td><td>A-008 Air Filter Housing 与 A-010 Fan Shroud 均为 121x22x92；左右侧格栅同尺寸</td><td>自动排除（不进人工队列，但可查）</td></tr>
 <tr><td>无 OE，仅属性一致</td><td>A-013~A-020、B-014~B-017 与前序记录；同供应商内部也存在</td><td><span class="tag warn">疑似</span>，原因=无 OE 属性一致 / 同供应商疑似重复</td></tr>
 <tr><td>信息不全的相似件</td><td>B-018 Right Side Grille VN 65x55x36 与 B-013 Right Side Grille “Volvo VN”（无年份、无尺寸）</td><td><span class="tag warn">疑似</span>，同供应商 + 缺关键字段，交人工判断</td></tr>
 <tr><td>缺字段</td><td>A-024/B-022 缺价格币种；A-025 缺车型尺寸 OE；B-023 缺车型；B-024 缺 MOQ；B-013 缺尺寸、车型不完整</td><td>异常清单；缺关键信息的不参与自动归一</td></tr>
@@ -160,7 +161,7 @@
 <div class="table-wrap"><table>
 <thead><tr><th>分类</th><th>条件</th><th>后续</th></tr></thead>
 <tbody>
-<tr><td><span class="tag ok">已确认归一</span></td><td>规则自动确认（跨供应商、共用 OE，且类别、位置、车型、尺寸全部存在且一致、无任何冲突），或人工确认合并</td><td>可人工撤销（拆分）</td></tr>
+<tr><td><span class="tag ok">已确认归一</span></td><td>规则自动确认（跨供应商、共用 OE，且类别、位置、车型（含年份）全部存在且一致、无任何冲突；包装尺寸只作辅助），或人工确认合并</td><td>可人工撤销（拆分）</td></tr>
 <tr><td><span class="tag warn">疑似重复</span></td><td>有候选关系但证据不足或存在冲突</td><td>进入待确认清单，附原因、冲突、缺失、建议动作</td></tr>
 <tr><td><span class="tag">独立产品</span></td><td>没有任何待决候选</td><td>—</td></tr>
 <tr><td><span class="tag bad">待补充</span></td><td>缺少关键字段（类别无法识别、车型/尺寸缺失、价格缺失等）</td><td>进入异常清单，补资料后重新导入</td></tr>

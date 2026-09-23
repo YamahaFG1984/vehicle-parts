@@ -39,7 +39,7 @@
 <p class="subtitle">按题目的交付要求逐条对应，几分钟读完；每节末尾链接到详细设计。</p>
 
 <div class="callout">
-<p><strong>一句话</strong>：原件只追加不覆盖，每个字段都能追回到“文件 · 工作表/页 · 行 · 列”；只有跨供应商、共用 OE 且关键属性全部一致的记录才自动归一，其余一律进入人工复核，并写明原因、冲突、缺失和建议动作；人工决定优先于规则、可审计、可撤销。</p>
+<p><strong>一句话</strong>：原件只追加不覆盖，每个字段都能追回到“文件 · 工作表/页 · 行 · 列”；只有跨供应商、共用 OE，且类别、车型（含年份）、位置全部一致的记录才自动归一（可一键关闭），其余一律进入人工复核，并写明原因、冲突、缺失和建议动作；人工决定优先于规则、可审计、可撤销。</p>
 </div>
 
 <h2 id="deliverables">1. 交付物清单</h2>
@@ -92,24 +92,27 @@
 <div class="table-wrap"><table>
 <thead><tr><th>情况</th><th>处理</th><th>样本例子</th></tr></thead>
 <tbody>
-<tr><td>表头写法不同但在别名表内</td><td>自动映射列；未识别列保留原值并在报告中列出</td><td>A 的 <code>Supplier SKU</code> / B 的 <code>Brand Number</code> / C 的 <code>Part #</code></td></tr>
+<tr><td>表头写法不同但在别名表内</td><td>自动映射列；未识别列保留原值并在报告中列出。网页上传先预览，不对可逐列改映射</td><td>A 的 <code>Supplier SKU</code> / B 的 <code>Brand Number</code> / C 的 <code>Part #</code></td></tr>
 <tr><td>名称写法、单位、符号差异</td><td>归一化：类别、左右、车型年份、mm→cm、<code>$</code>→USD（推断会记提示）</td><td><code>Side Grille, Left side</code> = <code>Left Side Grille</code>；<code>1220 x 750 x 70 mm</code> = <code>122 x 75 x 7 cm</code></td></tr>
-<tr><td>同一文件再次导入</td><td>按 sha256 识别为重复，不产生任何变化</td><td>重复导入 A 原表</td></tr>
+<tr><td>同一文件再次导入</td><td>已成功导入过 → 按 sha256 识别为重复，不产生任何变化；当初没识别出数据的文件可以直接重导；<code>--reprocess</code> 可按新映射重新处理</td><td>重复导入 A 原表</td></tr>
+<tr><td>编号写法变化</td><td>按规范化编号识别为同一条目，记“编号写法变化”提示</td><td><code>A-03-L</code> 改写为 <code>A03L</code></td></tr>
 <tr><td>新资料中的新增 / 未变 / 报价变化</td><td>新增建档；报价追加为新的一条，旧报价保留为历史</td><td>A v2 中 A-001 调价、A-002 改 MOQ</td></tr>
-<tr><td><strong>自动归一</strong></td><td>仅当<strong>跨供应商</strong>、<strong>共用 OE</strong>，且类别、车型（含年份）、尺寸、位置<strong>全部存在并一致</strong></td><td>A-001 ↔ B-001 等 12 对；C-1001 并入同一产品</td></tr>
-<tr><td><strong>自动排除</strong></td><td>无共同 OE，且类别 / 位置 / 车型 / 尺寸有硬冲突：不进人工队列，但在 Admin 可查排除理由</td><td>A-008 空滤壳 vs A-010 风扇护罩（同车型同尺寸）</td></tr>
+<tr><td><strong>自动归一</strong></td><td>仅当<strong>跨供应商</strong>、<strong>共用 OE</strong>，且类别、车型（含年份）、位置<strong>全部存在并一致</strong>；包装尺寸只作辅助（不同也只是提示）</td><td>A-001 ↔ B-001 等 12 对；C-1001 等 6 条并入已有产品；A-006 换纸箱后仍保持归一</td></tr>
+<tr><td><strong>自动排除</strong></td><td>无共同 OE，且类别 / 位置 / 车型有硬冲突：不进人工队列，但在 Admin 可查排除理由</td><td>A-008 空滤壳 vs A-010 风扇护罩（同车型同纸箱）；左侧格栅 vs 右侧格栅</td></tr>
 </tbody></table></div>
 <h3>必须人工判断</h3>
 <div class="table-wrap"><table>
 <thead><tr><th>情况</th><th>为什么不能自动</th><th>样本例子</th></tr></thead>
 <tbody>
-<tr><td>共用 OE，但类别 / 左右 / 尺寸冲突</td><td>可能是 OE 录错，也可能是通用参考号；合并会发错货</td><td>OE-SHARED-01：A-021 Front Grille vs B-019 Bug Screen</td></tr>
+<tr><td>共用 OE，但类别 / 左右 / 车型冲突</td><td>可能是 OE 录错，也可能是通用参考号；合并会发错货</td><td>OE-SHARED-01：A-021 Front Grille vs B-019 Bug Screen</td></tr>
 <tr><td>共用 OE，但缺关键字段</td><td>证据不足以排除冲突</td><td>C-2005 缺尺寸；B-013 缺尺寸和年份</td></tr>
 <tr><td>无 OE，仅类别 / 车型 / 尺寸一致</td><td>“长得像”不等于同一件</td><td>A-013 vs A-001</td></tr>
 <tr><td>属性一致但 OE 不同</td><td>可能是不同代次或替代件</td><td>A-001 vs A-021</td></tr>
 <tr><td>同一供应商的两个编号</td><td>可能是重复录入，也可能是不同品质档</td><td>A-005 vs A-028（同 OE 同属性）</td></tr>
 <tr><td>会造成传递合并</td><td>A≈B、B≈C 不代表 A≈C</td><td>B-005 ↔ A-028 会把 A-005、A-028 带进同一产品，被暂停</td></tr>
-<tr><td>已归一的记录关键属性变了</td><td>原来的证据失效</td><td>A v2 中 A-006 尺寸变化，与 B-006 的归一被重新打开</td></tr>
+<tr><td>品名与包装尺寸矛盾</td><td>可能是品名录错，也可能是尺寸录错</td><td>B-025、B-022 标为 Bug Screen，包装却与同车型多条 Front Grille 一致 → 疑似品名错误</td></tr>
+<tr><td>车型年份仅部分重叠</td><td>可能是同一件的数据不严谨，也可能不是</td><td>2018-2023 vs 2019-2023</td></tr>
+<tr><td>已归一记录的关键属性变化</td><td>新资料不一定对</td><td>A-006 包装尺寸变化：保持归一，开“关键属性变化”交人核对</td></tr>
 <tr><td>缺字段、类别无法识别、位置来源矛盾、日期有歧义</td><td>系统不猜测填充</td><td>A-025 缺车型尺寸 OE；A-030 “Hood Latch”；C-9001 只写 “Grille”</td></tr>
 <tr><td>撤销一条自动归一</td><td>规则也可能错</td><td>产品页进入该关系，选“不是同一产品”即拆分</td></tr>
 </tbody></table></div>
@@ -119,22 +122,29 @@
 <ol>
   <li><strong>候选生成</strong>：只比较共用 OE、同类别同车型、或同尺寸的记录；编号字符串本身从不作为依据（样本中 <code>A-01-00</code> / <code>B01X</code> 的数字只是巧合）。</li>
   <li><strong>逐字段比较</strong>：OE、类别、车型、尺寸、位置各得出 相等 / 冲突 / 缺失 / 不适用；名称相似度只作弱证据，不单独触发或否决。</li>
-  <li><strong>置信度</strong> = 相等字段权重 ÷ 所有适用字段权重（OE 40、类别 20、车型 15、尺寸 15、位置 10、名称 5）；缺失字段计入分母，所以“无 OE 仅属性一致”不会显示为高置信；有硬冲突时置信度封顶 0.3。</li>
+  <li><strong>置信度</strong> = 相等字段权重 ÷ 所有适用字段权重（OE 40、类别 20、车型 15、包装尺寸 15、位置 10、名称 5）；缺失字段计入分母，所以“无 OE 仅属性一致”不会显示为高置信；有硬冲突时置信度封顶 0.3。</li>
 </ol>
 <h3>风险控制</h3>
 <ul>
-  <li><strong>硬冲突一票否决</strong>：类别、左右、车型年份、尺寸任一冲突，永不自动合并。</li>
+  <li><strong>硬冲突一票否决</strong>：类别、左右、车型（含年份不重叠）任一冲突，永不自动合并。包装尺寸是软证据：供应商换纸箱很常见，尺寸不同只扣分并提示，不否决也不拆散产品；品名与尺寸矛盾另由“疑似品名错误”检查提示。</li>
   <li><strong>同供应商不自动合并</strong>，并在聚类时<strong>防传递</strong>：规则产生的合并若会把冲突记录或同供应商的两个编号放进同一产品，就暂停并交人工。</li>
   <li><strong>人工决定优先</strong>：以双方属性指纹（evidence_hash）为准；资料未变，人工决定一直有效；资料变了自动重新打开并写审计。</li>
   <li><strong>可解释、可复现</strong>：每个候选记录原因码、冲突字段（双方取值）、缺失信息、建议动作和规则版本；规则参数在 <code>config/rules/matching.yaml</code>，带版本号。</li>
   <li><strong>可撤销、可审计</strong>：所有决定（含规则首次决定与系统重新打开）写入只追加的 ReviewDecision。</li>
   <li><strong>自动化测试守护</strong>：样本中的每一类陷阱都有端到端测试，保证“误合并 = 0”。</li>
 </ul>
+<h3>为什么这 12 对敢自动合并</h3>
+<ul>
+  <li><strong>五项证据缺一不可</strong>：跨供应商 + 共用 OE + 类别一致 + 车型（含年份）一致 + 位置一致或不适用；任一缺失、任一冲突、年份只是部分重叠都不合并。这不是“仅凭共同 OE”。</li>
+  <li><strong>同供应商和传递合并都被挡住</strong>：A-028 与 A-005 同属供应商 A，即使通过 B-005 可以连起来，也暂停交人确认。</li>
+  <li><strong>可撤销</strong>：产品页列出每条归一依据，一键拆分；决定进审计日志，之后重跑规则也不会被覆盖。</li>
+  <li><strong>可关闭</strong>：<code>config/rules/matching.yaml</code> 设 <code>auto_confirm.enabled: false</code>，这 12 对变为“共用 OE 且关键属性一致（待确认）”，在复核队列里按组批量确认即可。</li>
+</ul>
 <h3>人工确认入口</h3>
 <div class="table-wrap"><table>
 <thead><tr><th>入口</th><th>用法</th></tr></thead>
 <tbody>
-<tr><td>Web 复核队列 <code>/review/</code></td><td>按优先级（共用 OE 冲突最先）排列；详情页并排显示字段对照、双方原始行、建议动作；可选 确认合并 / 不是同一产品 / 待补充资料。对有硬冲突的候选确认合并时必须填写理由。</td></tr>
+<tr><td>Web 复核队列 <code>/review/</code>（按疑似组）</td><td>相互关联的待确认关系归为一组（样本 50 对 → 7 组），一页内并排对照组内记录，每对选 确认合并 / 不是同一产品 / 待补充资料，一次提交，或整组判为不同；有硬冲突的合并必须填写理由。逐对视图 <code>/review/pairs/</code> 与候选详情页提供字段对照、原始行、建议动作和审计记录。</td></tr>
 <tr><td>产品详情页</td><td>列出每条已合并关系，可进入后拆分</td></tr>
 <tr><td>xlsx 离线回写</td><td>导出 <code>review_list.xlsx</code> → 填 decision / note → <code>import_review 文件 --reviewer 姓名</code>；任一行有误则整份不写入并逐行报错</td></tr>
 <tr><td>Admin</td><td>候选批量决定；证据数据只读</td></tr>
@@ -156,7 +166,7 @@
 <div class="table-wrap"><table>
 <thead><tr><th>场景</th><th>做法</th></tr></thead>
 <tbody>
-<tr><td>新供应商 / 新格式</td><td><code>import_source 文件 --supplier D --dry-run</code> 预览列识别 → 未识别的列在 <code>config/rules/column_aliases.yaml</code> 补别名，或写 <code>--mapping</code> 映射文件 → 正式导入。网页 <code>/imports/</code> 也可上传。</td></tr>
+<tr><td>新供应商 / 新格式</td><td>网页 <code>/imports/</code> 上传后先预览，可逐列调整映射、指定表头行，确认后入库；命令行 <code>import_source 文件 --supplier D --dry-run</code> 预览列识别 → 未识别的列在 <code>config/rules/column_aliases.yaml</code> 补别名，或写 <code>--mapping</code> 映射文件 → 正式导入。没识别出数据时导入直接失败、不留归档，改好后重导即可；已导入的文件可 <code>--reprocess</code> 按新映射重新处理。</td></tr>
 <tr><td>同一供应商的新版本</td><td>直接导入：系统按“供应商 + 编号”判定 新增 / 未变 / 更新 / 冲突 / 本次未出现（不删除）；关键属性变化会重新评估相关归一，并进入复核队列。增补文件加 <code>--partial</code>，不做“未出现”判定。</td></tr>
 <tr><td>规则调整</td><td>改 <code>synonyms.yaml</code>（新品类、新写法）或 <code>matching.yaml</code>（权重、容差、自动归一条件）并提升 version → <code>run_matching --dry-run</code> 查看会变化的候选 → <code>run_matching</code> 正式执行；人工决定不受影响。</td></tr>
 <tr><td>人工确认回写</td><td>在线 <code>/review/</code>；或离线 <code>export_data --only review</code> → 填写 → <code>import_review</code>。回写后自动重新聚类。</td></tr>
@@ -167,9 +177,9 @@
 <div class="table-wrap"><table>
 <thead><tr><th>阶段</th><th>结果</th></tr></thead>
 <tbody>
-<tr><td>导入 A（27 行）+ B（26 行）</td><td>53 个条目 → 41 个归一产品：<span class="tag ok">已确认归一 12</span> <span class="tag">独立产品 24</span> <span class="tag bad">待补充 5</span>；<span class="tag warn">疑似重复待确认 48</span>（其中共用 OE 冲突 6 条排在最前）；规则排除 49 对</td></tr>
-<tr><td>导入 A v2</td><td>更新 3 · 冲突 1 · 新增 3 · 未变 22 · 本次未出现 1；A-006 的归一被重新打开；A-028 被防传递拦下</td></tr>
-<tr><td>导入 C 的 PDF（2 页）</td><td>新增 8 · 文件内重复 1；5 条经共用 OE 并入已有产品（C-1001、C-1002、C-2003、C-2004、C-2006）；C-1003-R（右侧，却用了左侧件的 OE）进入复核；C-9001 “Grille” 待补充</td></tr>
+<tr><td>导入 A（27 行）+ B（26 行）</td><td>53 个条目 → 41 个归一产品：<span class="tag ok">已确认归一 12</span> <span class="tag">独立产品 23</span> <span class="tag bad">待补充 6</span>；<span class="tag warn">疑似重复 50 对，归为 7 组</span>（其中共用 OE 冲突 6 对排在最前）；规则排除 46 对；B-025、B-022 被标为疑似品名错误</td></tr>
+<tr><td>导入 A v2</td><td>更新 3 · 冲突 1 · 新增 3 · 未变 22 · 本次未出现 1；A-006 只换了包装，仍与 B-006 保持归一，并开“关键属性变化”交人核对；A-028 被防传递拦下</td></tr>
+<tr><td>导入 C 的 PDF（2 页）</td><td>新增 8 · 文件内重复 1；6 条经共用 OE 并入已有产品（C-1001、C-1002、C-2003、C-2004、C-2005、C-2006）；C-1003-R（右侧，却用了左侧件的 OE）进入复核；C-9001 “Grille” 待补充</td></tr>
 </tbody></table></div>
 <p>逐条结果见 <a href="design.html#samples">设计文档 5.5</a>、<a href="design.html#increment-result">5.6</a>，完整数据见上方样例文件。</p>
 
@@ -177,9 +187,9 @@
 <ol>
   <li><strong>数据结构与流程</strong>（2 分钟）：本页第 2 节的三层模型与流程图；运行 <code>demo</code>，看导入报告。</li>
   <li><strong>原件与字段来源</strong>（2 分钟）：搜索 <code>OE-VNL-1001</code> → 产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
-  <li><strong>判断依据、风险控制、人工确认入口</strong>（3 分钟）：复核队列打开 OE-SHARED-01 候选（字段对照、冲突、建议动作）→ 选“不是同一产品”；打开 A-013 候选 → 确认合并；产品页演示拆分；Admin 看被排除的 A-008 / A-010。</li>
+  <li><strong>判断依据、风险控制、人工确认入口</strong>（3 分钟）：复核队列按组打开 VNL 前格栅这一组（组内并排对照）→ 把 A-021 ↔ B-019（OE-SHARED-01，类别冲突）选“不是同一产品”，A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；产品页演示拆分；Admin 看被排除的 A-008 / A-010。</li>
   <li><strong>自动 vs 人工</strong>（1 分钟）：对照本页第 3 节，指出刚才哪些是规则自动处理、哪些是人工决定（审计记录里可见）。</li>
-  <li><strong>持续维护</strong>（2 分钟）：<code>import_source samples/demo/供应商A报价表_v2.xlsx</code>（更新 / 冲突 / 未出现，A-006 被重新打开）→ 导入 C 的 PDF → 导出 <code>review_list.xlsx</code> 填一行后 <code>import_review</code> 回写。</li>
+  <li><strong>持续维护</strong>（2 分钟）：<code>import_source samples/demo/供应商A报价表_v2.xlsx</code>（更新 / 冲突 / 未出现；A-006 换纸箱仍保持归一但被标出）→ 网页上传 C 的 PDF，在预览页看列映射后确认导入 → 导出 <code>review_list.xlsx</code> 填一行后 <code>import_review</code> 回写。</li>
 </ol>
 <p>现场新资料的处理方式（提取错误、编号冲突、规格缺失、疑似重复）见 <a href="implementation.html#live">面试现场的新资料</a>。</p>
 </main>
