@@ -189,7 +189,7 @@
 <h2 id="route">8. 演示路线（约 10 分钟）</h2>
 <ol>
   <li><strong>数据结构与流程</strong>（2 分钟）：本页第 2 节的三层模型与流程图；运行 <code>demo</code>，看导入报告。</li>
-  <li><strong>查询、原件与字段来源</strong>（2 分钟）：搜索 <code>OE-VNL-1001</code>（也可输入 <code>b01x</code>，编号比较忽略大小写和连字符）→ 点“导出查询结果”，打开 xlsx 看品牌号、分别报价、字段来源 → 回到产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
+  <li><strong>查询、原件与字段来源</strong>（2 分钟）：在首页大搜索框输入 <code>OE-VNL-1001</code>（也可输入 <code>b01x</code>，编号比较忽略大小写和连字符）→ 点“导出查询结果”，打开 xlsx 看品牌号、分别报价、字段来源 → 回到产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
   <li><strong>判断依据、风险控制、人工确认入口</strong>（3 分钟）：复核队列按组打开 VNL 前格栅这一组（组内并排对照）→ 把 A-021 ↔ B-019（OE-SHARED-01，类别冲突）选“不是同一产品”，A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；产品页演示拆分；Admin 看被排除的 A-008 / A-010。</li>
   <li><strong>自动 vs 人工</strong>（1 分钟）：对照本页第 3 节，指出刚才哪些是规则自动处理、哪些是人工决定（审计记录里可见）。</li>
   <li><strong>持续维护</strong>（2 分钟）：<code>import_source samples/demo/供应商A报价表_v2.xlsx</code>（更新 / 冲突 / 未出现：A-006 换纸箱只算更新，A-012 改年款被重新打开）→ 网页上传 C 的 PDF，在预览页看列映射后确认导入 → 在 <code>synonyms.yaml</code> 给 A-030 “Hood Latch” 补一个类别，运行 <code>run_matching</code>，看它从“待补充”变为有类别 → 导出 <code>review_list.xlsx</code> 填一行后 <code>import_review</code> 回写。</li>

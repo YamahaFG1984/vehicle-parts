@@ -132,7 +132,7 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 
 <section class="step" id="s7">
 <h3>步骤 7 · 页面与 Admin</h3>
-<p><strong>产出</strong>：概览 <code>/</code>、<code>/search/</code>、<code>/products/&lt;code&gt;/</code>、<code>/items/&lt;id&gt;/</code>（字段来源、报价历史、每次导入的原始行）、<code>/review/</code>（按疑似组复核，一页对照、批量决定）、<code>/review/pairs/</code> 与候选详情（字段对照 + 决定表单）、<code>/review/issues/</code>（异常处理）、<code>/imports/</code>（上传 → 预览页调整列映射 → 确认入库）、<code>/exports/&lt;key&gt;/</code>、<code>/sources/&lt;id&gt;/download/</code>、Admin（证据只读，候选可批量决定）。全站需登录。</p>
+<p><strong>产出</strong>：概览 <code>/</code>（“概览”下方是大号搜索框、可选供应商与分类、示例查询）、<code>/search/</code>（顶部同一个搜索框，多词逐词匹配）、<code>/products/&lt;code&gt;/</code>、<code>/items/&lt;id&gt;/</code>（字段来源、报价历史、每次导入的原始行）、<code>/review/</code>（按疑似组复核，一页对照、批量决定）、<code>/review/pairs/</code> 与候选详情（字段对照 + 决定表单）、<code>/review/issues/</code>（异常处理）、<code>/imports/</code>（上传 → 预览页调整列映射 → 确认入库）、<code>/exports/&lt;key&gt;/</code>、<code>/sources/&lt;id&gt;/download/</code>、Admin（证据只读，候选可批量决定）。全站需登录。</p>
 <p><strong>DoD</strong>：搜 <code>OE-VNL-1001</code>、<code>oevnl1001</code>、<code>B03L</code>、<code>grille</code>、<code>Volvo</code>、供应商 <code>B</code> 均有结果；视图测试覆盖 200/302/403 与表单提交。</p>
 </section>
 
