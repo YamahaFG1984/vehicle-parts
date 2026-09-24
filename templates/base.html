@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}零件资料归一化{% endblock %}</title>
+<title>{% block title %}{{ SITE_NAME }}{% endblock %}</title>
 <link rel="stylesheet" href="{% static 'css/app.css' %}">
 </head>
 <body>
 <header class="top"><div class="inner">
-  <a class="brand" href="{% url 'catalog:dashboard' %}">零件资料归一化</a>
+  <a class="brand" href="{% url 'catalog:dashboard' %}">{{ SITE_NAME }}</a>
   {% block header_search %}
   <form class="search" action="{% url 'catalog:search' %}" method="get">
     <input type="search" name="q" value="{{ q|default:'' }}" placeholder="编号 / OE / 关键词 / 供应商">
@@ -20,7 +20,10 @@
     <a href="{% url 'matching:issue_list' %}">异常</a>
     <a href="{% url 'ingestion:batch_list' %}">导入</a>
     <a href="{% url 'admin:index' %}">Admin</a>
-    {% if user.is_authenticated %}<span class="muted">· {{ user.get_username }}</span>{% endif %}
+    {% if user.is_authenticated %}
+    <span class="muted">· {{ user.get_username }}</span>
+    <form class="logout" action="{% url 'logout' %}" method="post">{% csrf_token %}<button type="submit">退出</button></form>
+    {% endif %}
   </nav>
 </div></header>
 <main>

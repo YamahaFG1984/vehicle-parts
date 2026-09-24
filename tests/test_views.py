@@ -14,7 +14,8 @@ def staff(client, django_user_model):
 
 def test_login_required(client, imported):
     resp = client.get("/search/?q=OE-VNL-1001")
-    assert resp.status_code == 302 and "/admin/login/" in resp["Location"]
+    assert resp.status_code == 302
+    assert resp["Location"].startswith("/accounts/login/?next=/search/")
 
 
 @pytest.mark.parametrize("q", ["OE-VNL-1001", "oevnl1001", "B01X", "a-01-00"])
@@ -165,3 +166,65 @@ def test_every_word_must_match(client, staff, imported):
     assert resp.context["results"]
     assert all(any(m.fitment_make == "Freightliner" for m in r["members"])
                for r in resp.context["results"])
+
+
+def test_dashboard_cards_show_counts(client, staff, imported):
+    # Regression: the search box's choices once overwrote the per-category counts.
+    resp = client.get("/")
+    assert resp.context["states"] == {"已确认归一": 12, "独立产品": 23, "待补充": 6}
+    html = resp.content.decode()
+    for n in (12, 23, 6):
+        assert f'<div class="n">{n}</div>' in html
+    assert ">疑似重复</option>" in html  # search box choices still rendered
+
+
+def test_site_name_everywhere(client, staff, imported):
+    from django.conf import settings
+
+    assert settings.SITE_NAME == "Fit Vehicle Parts 产品数据中心"
+    for url in ["/", "/search/?q=b01x", "/review/", "/imports/", "/admin/"]:
+        html = client.get(url).content.decode()
+        assert settings.SITE_NAME in html, url
+        assert "零件资料归一化" not in html, url
+
+
+class TestLoginPage:
+    @pytest.fixture
+    def user(self, db, django_user_model):
+        return django_user_model.objects.create_user("zhang.wei", password="pw-12345-login")
+
+    def test_renders_with_system_name_and_csrf(self, client):
+        html = client.get("/accounts/login/?next=/review/").content.decode()
+        assert "登录 | Fit Vehicle Parts 产品数据中心" in html
+        assert "csrfmiddlewaretoken" in html
+        assert 'name="next" value="/review/"' in html
+        assert "css/login.css" in html and "js/login.js" in html
+        assert "https://" not in html  # no external requests (fonts, CDNs)
+
+    def test_wrong_password_shows_error_and_keeps_username(self, client, user):
+        resp = client.post("/accounts/login/", {"username": "zhang.wei", "password": "nope"})
+        assert resp.status_code == 200
+        html = resp.content.decode()
+        assert resp.context["form"].non_field_errors()
+        assert str(resp.context["form"].non_field_errors()[0]) in html
+        assert 'value="zhang.wei"' in html
+
+    def test_login_redirects_to_next(self, client, user):
+        resp = client.post("/accounts/login/", {"username": "zhang.wei",
+                                                "password": "pw-12345-login", "next": "/review/"})
+        assert resp.status_code == 302 and resp["Location"] == "/review/"
+
+    def test_remember_me(self, client, user):
+        client.post("/accounts/login/", {"username": "zhang.wei", "password": "pw-12345-login"})
+        assert client.session.get_expire_at_browser_close()
+        client.post("/accounts/logout/")
+        client.post("/accounts/login/", {"username": "zhang.wei", "password": "pw-12345-login",
+                                         "remember": "1"})
+        assert not client.session.get_expire_at_browser_close()
+
+    def test_logout(self, client, user):
+        client.force_login(user)
+        assert 'action="/accounts/logout/"' in client.get("/").content.decode()
+        resp = client.post("/accounts/logout/")
+        assert resp.status_code == 302 and resp["Location"] == "/accounts/login/"
+        assert client.get("/").status_code == 302
