@@ -17,7 +17,7 @@
     <label>分类
       <select name="state">
         <option value="">全部</option>
-        {% for s in states %}<option {% if s == state %}selected{% endif %}>{{ s }}</option>{% endfor %}
+        {% for s in state_choices %}<option {% if s == state %}selected{% endif %}>{{ s }}</option>{% endfor %}
       </select>
     </label>
     <span class="muted">编号忽略大小写、空格和连字符 · 按 <kbd>/</kbd> 随时回到搜索框</span>

@@ -15,7 +15,7 @@ SEARCH_EXAMPLES = ["OE-VNL-1001", "b01x", "Side Grille", "Volvo VNL", "Air Filte
 def _search_box_context(**extra):
     """Choices for the shared search box (dashboard and search page)."""
     return {"suppliers": Supplier.objects.order_by("code"), "examples": SEARCH_EXAMPLES,
-            "states": ["已确认归一", "疑似重复", "独立产品", "待补充"], **extra}
+            "state_choices": ["已确认归一", "疑似重复", "独立产品", "待补充"], **extra}
 
 
 def dashboard(request):
