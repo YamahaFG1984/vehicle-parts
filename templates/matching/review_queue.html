@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load vp %}
-{% block title %}复核队列 · 零件资料归一化{% endblock %}
+{% block title %}复核队列 · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>复核队列（逐对）</h1>
 <p><a href="{% url 'matching:group_queue' %}">← 按疑似组处理（推荐）</a></p>

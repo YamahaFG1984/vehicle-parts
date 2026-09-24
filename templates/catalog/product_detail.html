@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load vp %}
-{% block title %}{{ product.code }} · 零件资料归一化{% endblock %}
+{% block title %}{{ product.code }} · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>{{ product.code }} {% include "catalog/_state.html" %}</h1>
 <p class="muted">{{ product.category }} {{ product.position }} · {{ product.fitment_label }} · {{ product.dims_label }}

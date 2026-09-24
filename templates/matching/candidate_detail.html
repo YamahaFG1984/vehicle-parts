@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load vp %}
-{% block title %}候选 #{{ cand.pk }} · 零件资料归一化{% endblock %}
+{% block title %}候选 #{{ cand.pk }} · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>候选 #{{ cand.pk }}：{{ cand.item_a }} ↔ {{ cand.item_b }}</h1>
 <p>{{ cand.get_classification_display }} · <strong>{{ cand.get_status_display }}</strong>

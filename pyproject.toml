@@ -1,7 +1,7 @@
 [project]
 name = "vehicle-parts"
 version = "0.1.0"
-description = "供应商零件资料的可追溯归档与归一化 Demo"
+description = "Fit Vehicle Parts 产品数据中心：供应商零件资料的可追溯归档与归一化"
 requires-python = ">=3.12"
 dependencies = [
     "django>=5.2,<5.3",

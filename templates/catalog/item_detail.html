@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load vp %}
-{% block title %}{{ item }} · 零件资料归一化{% endblock %}
+{% block title %}{{ item }} · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>{{ item.supplier.name }} · {{ item.supplier_part_no }}</h1>
 <p>所属产品 <a href="{% url 'catalog:product_detail' item.product.code %}">{{ item.product.code }}</a> · 原始记录 {{ item.source_ref|default:"—" }} ·

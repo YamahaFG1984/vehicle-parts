@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load vp %}
-{% block title %}疑似组 · 零件资料归一化{% endblock %}
+{% block title %}疑似组 · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>疑似组：{{ group.candidates|length }} 对待确认，涉及 {{ group.product_ids|length }} 个产品</h1>
 <p><a href="{% url 'matching:group_queue' %}">← 返回复核队列</a></p>

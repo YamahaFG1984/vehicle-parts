@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}批次 #{{ batch.pk }} · 零件资料归一化{% endblock %}
+{% block title %}批次 #{{ batch.pk }} · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>批次 #{{ batch.pk }} · {{ batch.source_file.original_name }}</h1>
 <p>供应商 {{ batch.source_file.supplier }} · {{ batch.get_status_display }} · 规则 {{ batch.ruleset_version }} ·
