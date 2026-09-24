@@ -1,0 +1,15 @@
+# Locally-managed Cloudflare Tunnel (alternative to the dashboard / token setup).
+#   cloudflared tunnel login
+#   cloudflared tunnel create vehicle-parts          # prints the tunnel UUID
+#   cloudflared tunnel route dns vehicle-parts parts.example.com
+#   copy this file to ~/.cloudflared/config.yml, fill in the UUID and hostname, then:
+#   cloudflared tunnel run vehicle-parts             # or: sudo cloudflared service install
+tunnel: <TUNNEL-UUID>
+credentials-file: /home/ubuntu/.cloudflared/<TUNNEL-UUID>.json
+
+ingress:
+  - hostname: parts.example.com          # must equal DJANGO_PUBLIC_HOSTNAME in .env
+    service: http://127.0.0.1:8000       # gunicorn from scripts/serve.sh
+    originRequest:
+      connectTimeout: 10s
+  - service: http_status:404

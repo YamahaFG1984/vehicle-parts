@@ -26,5 +26,8 @@ RUN DJANGO_SECRET_KEY=collectstatic DATABASE_URL=sqlite:////tmp/unused.db \
 
 USER app
 EXPOSE 8000
+# Inside the container listen on all interfaces so the compose network (and cloudflared) can
+# reach it; compose publishes the port on 127.0.0.1 only.
+ENV GUNICORN_BIND=0.0.0.0:8000
 ENTRYPOINT ["/app/scripts/entrypoint.sh"]
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]
+CMD ["gunicorn", "config.wsgi:application", "-c", "config/gunicorn.conf.py"]

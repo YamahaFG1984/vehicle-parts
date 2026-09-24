@@ -15,6 +15,23 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# Public hostname(s) when the site is reached through a Cloudflare Tunnel (or any HTTPS proxy).
+# Applies to every environment, so `runserver` behind a tunnel works as well as production.
+# Each one is added to ALLOWED_HOSTS and, as https://<host>, to CSRF_TRUSTED_ORIGINS (needed
+# for any POST, including the login form, when the page was loaded over HTTPS).
+#   parts.example.com   a fixed hostname (named tunnel)
+#   .trycloudflare.com  any subdomain: `cloudflared tunnel --url ...` (quick tunnel) gets a new
+#                       random https://<words>.trycloudflare.com address on every start
+PUBLIC_HOSTNAMES = env.list("DJANGO_PUBLIC_HOSTNAME", default=[])
+ALLOWED_HOSTS = list(dict.fromkeys([*ALLOWED_HOSTS, *PUBLIC_HOSTNAMES]))
+CSRF_TRUSTED_ORIGINS = list(dict.fromkeys([
+    *env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[]),
+    *(f"https://*{h}" if h.startswith(".") else f"https://{h}" for h in PUBLIC_HOSTNAMES),
+]))
+if PUBLIC_HOSTNAMES:
+    # TLS ends at Cloudflare, which sends X-Forwarded-Proto: https through the tunnel.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

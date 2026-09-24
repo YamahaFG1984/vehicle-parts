@@ -1,0 +1,20 @@
+# Fit Vehicle Parts 产品数据中心 — gunicorn on 127.0.0.1:8000 (production settings).
+# Install:
+#   sudo cp deploy/systemd/vehicle-parts.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vehicle-parts
+#   journalctl -u vehicle-parts -f        # logs, including the visitor IP from Cloudflare
+[Unit]
+Description=Fit Vehicle Parts 产品数据中心 (gunicorn)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/vehicle-parts
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/vehicle-parts/scripts/serve.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

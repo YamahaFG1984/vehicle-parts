@@ -1,4 +1,7 @@
 # 服务器部署：docker compose up -d --build
+# 通过 Cloudflare Tunnel 发布到外网：在 .env 设置 DJANGO_PUBLIC_HOSTNAME 与 CLOUDFLARE_TUNNEL_TOKEN，
+#   docker compose --profile tunnel up -d --build
+#   （Cloudflare 控制台中该隧道的 Public Hostname 指向 http://web:8000）
 # 本机开发不需要启动本文件，直接 `uv run python manage.py runserver` 连接已有 PostgreSQL 即可。
 services:
   db:
@@ -29,9 +32,20 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "${WEB_PORT:-8000}:8000"
+      # Only on this machine: the public site is reached through the Cloudflare Tunnel.
+      - "127.0.0.1:${WEB_PORT:-8000}:8000"
     volumes:
       - media:/app/media   # 原始文件归档：必须与数据库一起备份
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]          # only with: docker compose --profile tunnel up -d
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - web
 
 volumes:
   pgdata:
