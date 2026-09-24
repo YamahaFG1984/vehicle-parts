@@ -50,6 +50,7 @@
 <tr><td>2. 简短说明</td><td>本页第 2~4 节；详细版见 <a href="design.html#model">数据模型</a>、<a href="design.html#flow">处理流程</a>、<a href="design.html#match">匹配规则</a>、<a href="design.html#review">人工复核</a>。</td></tr>
 <tr><td>3. 处理结果样例</td><td><a href="samples/master_data.xlsx">master_data.xlsx</a>（归一产品、成员品牌号、字段来源）、<a href="samples/supplier_offers.xlsx">supplier_offers.xlsx</a>（各供应商分别报价）、<a href="samples/import_report.xlsx">import_report.xlsx</a>（导入与增量报告）</td></tr>
 <tr><td>3. 异常 / 待确认清单</td><td><a href="samples/review_list.xlsx">review_list.xlsx</a>：“疑似重复”表（触发原因、冲突字段、缺失信息、置信度、建议动作）+“异常清单”表；黄色 decision / note 列可直接填写回写。</td></tr>
+<tr><td>能力 4：查询并导出整理结果</td><td>查询页按编号 / 品牌号 / OE / 关键词 / 供应商 / 分类查询后，点“导出查询结果（xlsx）”；产品页可“导出此产品”；命令行 <code>export_data --query …</code>。样例：<a href="samples/search_result_OE-VNL-1001.xlsx">search_result_OE-VNL-1001.xlsx</a>（查询 OE-VNL-1001 → 一个归一产品下 A、B、C 三家的品牌号、分别报价、字段来源）。详见 <a href="design.html#query-export">查询与导出</a>。</td></tr>
 <tr><td>4. 后续维护说明</td><td>本页第 6 节；详细版见 <a href="design.html#maint">持续维护</a>、<a href="implementation.html#ops">维护手册</a>。</td></tr>
 </tbody></table></div>
 <p class="meta">样例由 <code>demo --with-increment</code> 生成：导入供应商 A、B 原始报价表，再导入 A 的新版本和供应商 C 的 PDF 目录。</p>
@@ -188,7 +189,7 @@
 <h2 id="route">8. 演示路线（约 10 分钟）</h2>
 <ol>
   <li><strong>数据结构与流程</strong>（2 分钟）：本页第 2 节的三层模型与流程图；运行 <code>demo</code>，看导入报告。</li>
-  <li><strong>原件与字段来源</strong>（2 分钟）：搜索 <code>OE-VNL-1001</code> → 产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
+  <li><strong>查询、原件与字段来源</strong>（2 分钟）：搜索 <code>OE-VNL-1001</code>（也可输入 <code>b01x</code>，编号比较忽略大小写和连字符）→ 点“导出查询结果”，打开 xlsx 看品牌号、分别报价、字段来源 → 回到产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
   <li><strong>判断依据、风险控制、人工确认入口</strong>（3 分钟）：复核队列按组打开 VNL 前格栅这一组（组内并排对照）→ 把 A-021 ↔ B-019（OE-SHARED-01，类别冲突）选“不是同一产品”，A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；产品页演示拆分；Admin 看被排除的 A-008 / A-010。</li>
   <li><strong>自动 vs 人工</strong>（1 分钟）：对照本页第 3 节，指出刚才哪些是规则自动处理、哪些是人工决定（审计记录里可见）。</li>
   <li><strong>持续维护</strong>（2 分钟）：<code>import_source samples/demo/供应商A报价表_v2.xlsx</code>（更新 / 冲突 / 未出现：A-006 换纸箱只算更新，A-012 改年款被重新打开）→ 网页上传 C 的 PDF，在预览页看列映射后确认导入 → 在 <code>synonyms.yaml</code> 给 A-030 “Hood Latch” 补一个类别，运行 <code>run_matching</code>，看它从“待补充”变为有类别 → 导出 <code>review_list.xlsx</code> 填一行后 <code>import_review</code> 回写。</li>

@@ -32,7 +32,8 @@
       <ol><li><a href="#flow-ingest">4.1 归档与提取</a></li><li><a href="#flow-map">4.2 列映射</a></li><li><a href="#flow-norm">4.3 归一化</a></li><li><a href="#flow-diff">4.4 增量比对</a></li><li><a href="#issues">4.5 异常类型</a></li><li><a href="#quality">4.6 资料质量检查</a></li></ol></li>
     <li><a href="#match">5. 匹配规则</a>
       <ol><li><a href="#blocking">5.1 候选生成</a></li><li><a href="#compare">5.2 字段比较</a></li><li><a href="#decide">5.3 分类决策</a></li><li><a href="#cluster">5.4 聚类与防传递</a></li><li><a href="#samples">5.5 样本结果</a></li><li><a href="#increment-result">5.6 增量结果</a></li></ol></li>
-    <li><a href="#review">6. 人工复核与回写</a></li>
+    <li><a href="#review">6. 人工复核与回写</a>
+      <ol><li><a href="#query-export">6.1 查询与导出</a></li></ol></li>
     <li><a href="#maint">7. 持续维护</a></li>
     <li><a href="#tradeoffs">8. 取舍汇总</a></li>
     <li><a href="#limits">9. 已知局限</a></li>
@@ -150,7 +151,7 @@
 <tr><td><code>ingestion</code></td><td>原件归档、提取、表头识别与列映射、导入批次、增量比对</td><td>Supplier, SourceFile, ImportBatch, SourceRecord</td></tr>
 <tr><td><code>catalog</code></td><td>归一化器、供应商条目、字段来源、编号、报价、归一产品、搜索与详情页</td><td>SupplierItem, FieldValue, PartNumber, SupplierOffer, Product</td></tr>
 <tr><td><code>matching</code></td><td>候选生成、比较、分类、聚类、异常、人工复核与审计、复核页</td><td>MatchCandidate, Issue, ReviewDecision</td></tr>
-<tr><td><code>exports</code></td><td>主数据、报价、待确认清单、导入报告导出；复核结果回写</td><td>（无）</td></tr>
+<tr><td><code>exports</code></td><td>按范围组合的工作表：全量导出（主数据、报价、待确认清单、导入报告）与查询结果导出；复核结果回写</td><td>（无）</td></tr>
 </tbody></table></div>
 
 <h3 id="layout">2.3 代码约定（Django 5.2 / Two Scoops）</h3>
@@ -484,6 +485,16 @@ else:
   <li><strong>审计</strong>：所有决定（包括规则自动决定的首次产生、系统重新打开）写入 ReviewDecision，含操作人、渠道、备注、决定时的快照。</li>
 </ul>
 
+<h3 id="query-export">6.1 查询与导出</h3>
+<p>题目要求“按产品编号、品牌号或关键词查询，并导出整理结果”，所以导出以<strong>查询</strong>为起点，而不只是全库倒出。</p>
+<ul>
+  <li><strong>同一个查询函数</strong>：查询页和“导出查询结果”都调用 <code>catalog.selectors.search()</code>，条件相同（关键词 / 编号、供应商、分类），结果集合必然一致；页面最多显示 200 个产品，导出不设上限。</li>
+  <li><strong>导出的范围是归一产品，不是命中的那一行</strong>：搜 <code>B01X</code> 命中的是 B 的一个条目，但导出的是它所属的归一产品，连同 A 的 <code>A-01-00</code> 等全部品牌号、各家报价与字段来源——这正是“查看一个归一产品下的不同品牌号、属性、供应商资料及分别报价”。命中的条目在“品牌号”表中标蓝并标注“命中”。</li>
+  <li><strong>工作簿内容</strong>：查询条件 · 说明 · 归一产品 · 品牌号 · 供应商报价 · 字段来源 · 疑似重复 · 异常清单 · 填写说明。后两张表只含与这些产品相关的记录，列与待确认清单相同，填写 decision / note 后可用 <code>import_review</code> 回写——“查一类件 → 导出 → 离线核对 → 回写”是一个完整闭环。</li>
+  <li><strong>入口</strong>：查询页“导出查询结果（xlsx）”、产品详情页“导出此产品”、命令行 <code>export_data --query … [--supplier …] [--state …]</code>。</li>
+  <li><strong>实现</strong>：每张工作表由一个接受 <code>ExportScope</code> 的函数生成（全库，或一组产品 id）；全量导出与查询导出只是同一组工作表的不同组合，列定义只有一份。导入报告描述的是文件而不是产品，只做全量。</li>
+</ul>
+
 <h2 id="maint">7. 持续维护</h2>
 <div class="table-wrap"><table>
 <thead><tr><th>场景</th><th>做法</th></tr></thead>
@@ -505,6 +516,7 @@ else:
 <tr><td>同供应商内部永不自动合并</td><td>避免把同一家的不同品质档合并</td><td>同家重复录入需要人工清理</td></tr>
 <tr><td>包装尺寸只作辅助证据（软冲突）、排序后比较</td><td>换纸箱不会拆散产品；摆放方向不同不误报</td><td>尺寸不能单独排除候选；靠类别/车型/位置硬冲突与“疑似品名错误”检查兜底</td></tr>
 <tr><td>关键属性变化以最新资料为准 + 留痕 + 重评</td><td>查询始终反映最新资料，变化可追溯</td><td>错误的新资料在人工处理前会短暂生效</td></tr>
+<tr><td>导出以查询为起点、范围取整个归一产品</td><td>导出的就是查询看到的，且自带核对所需的品牌号、报价、来源</td><td>命中一个条目会带出同产品的其他条目，文件可能比“命中行”大</td></tr>
 <tr><td>复核按疑似组展示</td><td>相关记录一次对照、批量决定</td><td>组可能较大（样本中最大 14 对），仍保留逐对视图</td></tr>
 <tr><td>不换算币种</td><td>不引入汇率的不确定性</td><td>不能直接给出“最便宜的供应商”</td></tr>
 <tr><td>以簇为节点生成候选</td><td>复核量可控</td><td>候选对的“代表对”可能随聚类变化；人工否决按成员对记录以保持有效</td></tr>

@@ -8,7 +8,7 @@ Django 5.2 + PostgreSQL。系统把供应商的 Excel / PDF / CSV 资料导入�
 - [PRD](docs/prd.html)：需求、验收标准、样本数据风险清单
 - [设计文档](docs/design.html)：架构、数据模型、流程、匹配规则，以及各项取舍
 - [分步实施](docs/implementation.html)：搭建、演示、部署、维护手册
-- [结果样例](docs/samples/)：主数据、供应商报价、待确认清单、导入报告
+- [结果样例](docs/samples/)：主数据、供应商报价、待确认清单、导入报告、查询结果导出示例
 
 ## 本机运行
 
@@ -40,7 +40,8 @@ docker compose exec web python manage.py createsuperuser
 |---|---|
 | `import_source <文件> [--supplier X] [--mapping m.yaml] [--partial] [--dry-run]` | 导入资料：原件归档，识别新增 / 更新 / 冲突 / 本次未出现，随后自动匹配 |
 | `run_matching [--dry-run]` | 按当前规则重新评估候选并聚类；证据没变时保留人工决定 |
-| `export_data [--out 目录] [--only master offers review report]` | 导出 xlsx |
+| `export_data [--out 目录] [--only master offers review report]` | 全量导出 xlsx |
+| `export_data --query <编号/关键词> [--supplier X] [--state 分类]` | 导出这次查询的整理结果（与网页查询页“导出查询结果”一致） |
 | `import_review <review_list.xlsx> --reviewer 姓名` | 回写离线填写的复核决定，全部通过才提交 |
 | `make_demo_samples` | 生成增量演示文件（`samples/demo/`） |
 | `demo [--with-increment] [--noinput]` | 清空业务数据后跑完整演示流程（脚本 / Docker 中必须加 `--noinput`） |

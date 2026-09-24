@@ -126,8 +126,8 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 
 <section class="step" id="s6">
 <h3>步骤 6 · 导出与复核回写</h3>
-<p><strong>产出</strong>：<code>apps/exports/</code>：<code>export_data --out exports/</code> 生成 master_data / supplier_offers / review_list / import_report 四个 xlsx；<code>import_review 文件</code> 回写决定。</p>
-<p><strong>DoD</strong>：每个导出行都带来源定位列（如 <code>候选人材料_供应商A报价表.xlsx!报价明细!R14</code>）；回写对非法值逐行报错且整体不提交；回写后审计日志 via=xlsx。</p>
+<p><strong>产出</strong>：<code>apps/exports/</code>：按范围（全库或查询命中的产品）生成的工作表函数；<code>export_data --out exports/</code> 生成 master_data / supplier_offers / review_list / import_report 四个全量 xlsx；<code>export_data --query … [--supplier …] [--state …]</code> 与查询页“导出查询结果”生成与查询结果一致的整理结果；<code>import_review 文件</code> 回写决定。</p>
+<p><strong>DoD</strong>：每个导出行都带来源定位列（如 <code>候选人材料_供应商A报价表.xlsx!报价明细!R14</code>）；查询导出的产品集合与查询页一致，包含命中产品下的全部品牌号与报价（<code>tests/test_exports.py</code>）；回写对非法值逐行报错且整体不提交；回写后审计日志 via=xlsx。</p>
 </section>
 
 <section class="step" id="s7">
@@ -148,7 +148,7 @@ uv run python manage.py import_source 候选人材料_供应商A报价表.xlsx -
 <h2 id="demo">演示脚本</h2>
 <ol>
   <li><code>uv run python manage.py demo --noinput --reviewer reviewer --password …</code>：清空业务数据 → 导入 A、B → 匹配 → 导出，并创建复核账号。讲解导入报告与异常。</li>
-  <li><code>runserver</code>，搜索 <code>OE-VNL-1001</code> → 产品详情：两个品牌号、两条报价（USD/USD、不同 MOQ）→ 点开尺寸字段看来源。</li>
+  <li><code>runserver</code>，搜索 <code>OE-VNL-1001</code> → 点“导出查询结果”，打开 xlsx（查询条件、归一产品、品牌号、分别报价、字段来源、相关疑似与异常）→ 产品详情：两个品牌号、两条报价（USD/USD、不同 MOQ）→ 点开尺寸字段看来源。</li>
   <li>复核队列（按疑似组）：打开 VNL 前格栅这一组，组内并排对照 → A-021 ↔ B-019（OE-SHARED-01）选“不是同一产品”、A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；再到产品页演示“拆分”。</li>
   <li><code>import_source samples/demo/供应商A报价表_v2.xlsx --supplier A</code>：展示 UPDATED / CONFLICT / NEW / NOT_IN_LATEST；A-006 只换了包装算“更新”，仍与 B-006 保持归一；A-012 改了年款算“冲突”，归一被重新打开；A-028 被防传递拦下。</li>
   <li>规则调整演示：在 <code>config/rules/synonyms.yaml</code> 为 A-030 “Hood Latch” 加一个类别，运行 <code>run_matching --dry-run</code> 看到“按新规则重新标准化”的变化，再正式运行；A-030 得到类别，UNKNOWN_CATEGORY 自动关闭。</li>
