@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>设计文档 · 零件资料归一化</title>
+<title>设计文档 · Fit Vehicle Parts 产品数据中心</title>
 <meta name="description" content="架构、数据模型、处理流程、匹配规则、人工复核与增量维护的设计，以及选择理由与取舍。">
 <link rel="stylesheet" href="assets/style.css">
 <script src="assets/theme.js"></script>
 </head>
 <body>
 <header class="topbar"><div class="topbar-inner">
-  <a class="brand" href="index.html">零件资料归一化 Demo</a>
+  <a class="brand" href="index.html">Fit Vehicle Parts 产品数据中心</a>
   <a class="nav" href="index.html">首页</a>
   <a class="nav" href="brief.html">交付说明</a>
   <a class="nav" href="prd.html">PRD</a>
@@ -160,7 +160,7 @@
   <li>业务写操作放 <code>services.py</code>，读查询放 <code>selectors.py</code>；视图与管理命令只做参数解析和调用，保持“薄”。</li>
   <li>模型用 <code>TextChoices</code>、<code>UniqueConstraint</code>、<code>CheckConstraint(condition=…)</code>（5.1+ 写法）、<code>db_default</code>；所有模型继承 <code>TimeStampedModel</code>。</li>
   <li>导入批次整体包在 <code>transaction.atomic()</code> 中；匹配重跑同样原子（<code>--dry-run</code> 即在事务末尾回滚）。</li>
-  <li>全站登录访问：使用 Django 5.1+ 的 <code>LoginRequiredMiddleware</code>，登录复用 Admin 登录页；静态文件在生产环境由 WhiteNoise 提供。</li>
+  <li>全站登录访问：使用 Django 5.1+ 的 <code>LoginRequiredMiddleware</code>，未登录一律跳转到公司登录页 <code>/accounts/login/</code>（<code>LoginView</code> + <code>templates/registration/login.html</code>；全站配色取自登录页设计：纸灰底、墨蓝文字与顶栏、钢灰次要色、信号黄强调、橙红错误色；始终为浅色（不随系统切换深色模式）；页面不加载任何外部资源；不勾选“在这台电脑上保持登录”则关闭浏览器即退出）；顶栏提供退出（POST）。系统名称集中在 <code>settings.SITE_NAME</code>。静态文件在生产环境由 WhiteNoise 提供。</li>
   <li>归一化器、比较器是无数据库依赖的纯函数，单元测试覆盖样本中的每一类陷阱。</li>
   <li>可调参数放 <code>config/rules/</code>：<code>column_aliases.yaml</code>、<code>synonyms.yaml</code>、<code>matching.yaml</code>。</li>
 </ul>
@@ -488,7 +488,7 @@ else:
 <h3 id="query-export">6.1 查询与导出</h3>
 <p>题目要求“按产品编号、品牌号或关键词查询，并导出整理结果”，所以导出以<strong>查询</strong>为起点，而不只是全库倒出。</p>
 <ul>
-  <li><strong>搜索优先的入口</strong>：首页“概览”下方是一个大号搜索框（进入即聚焦，按 <kbd>/</kbd> 随时回到搜索框），可选供应商和分类，并给出可点的示例查询；查询结果页顶部是同一个搜索框。多个词按“每个词都要命中某个字段”处理（<code>Volvo VNL</code> = 品牌 Volvo 且车型 VNL），整串也会按编号比较（<code>OE VNL 1001</code> 能找到 OE-VNL-1001），编号忽略大小写、空格和连字符。</li>
+  <li><strong>搜索优先的入口</strong>：首页概览统计卡片下方是一个大号搜索框（进入即聚焦，按 <kbd>/</kbd> 随时回到搜索框），可选供应商和分类，并给出可点的示例查询；查询结果页顶部是同一个搜索框。多个词按“每个词都要命中某个字段”处理（<code>Volvo VNL</code> = 品牌 Volvo 且车型 VNL），整串也会按编号比较（<code>OE VNL 1001</code> 能找到 OE-VNL-1001），编号忽略大小写、空格和连字符。</li>
   <li><strong>同一个查询函数</strong>：查询页和“导出查询结果”都调用 <code>catalog.selectors.search()</code>，条件相同（关键词 / 编号、供应商、分类），结果集合必然一致；页面最多显示 200 个产品，导出不设上限。</li>
   <li><strong>导出的范围是归一产品，不是命中的那一行</strong>：搜 <code>B01X</code> 命中的是 B 的一个条目，但导出的是它所属的归一产品，连同 A 的 <code>A-01-00</code> 等全部品牌号、各家报价与字段来源——这正是“查看一个归一产品下的不同品牌号、属性、供应商资料及分别报价”。命中的条目在“品牌号”表中标蓝并标注“命中”。</li>
   <li><strong>工作簿内容</strong>：查询条件 · 说明 · 归一产品 · 品牌号 · 供应商报价 · 字段来源 · 疑似重复 · 异常清单 · 填写说明。后两张表只含与这些产品相关的记录，列与待确认清单相同，填写 decision / note 后可用 <code>import_review</code> 回写——“查一类件 → 导出 → 离线核对 → 回写”是一个完整闭环。</li>
