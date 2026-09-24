@@ -3,7 +3,8 @@
 {% block title %}{{ product.code }} · 零件资料归一化{% endblock %}
 {% block content %}
 <h1>{{ product.code }} {% include "catalog/_state.html" %}</h1>
-<p class="muted">{{ product.category }} {{ product.position }} · {{ product.fitment_label }} · {{ product.dims_label }}</p>
+<p class="muted">{{ product.category }} {{ product.position }} · {{ product.fitment_label }} · {{ product.dims_label }}
+· <a href="{% url 'exports:search' %}?q={{ product.code|urlencode }}">导出此产品（xlsx）</a></p>
 
 <h2>成员属性（逐成员对照）</h2>
 <div class="table-wrap"><table>

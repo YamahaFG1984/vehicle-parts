@@ -8,12 +8,14 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.catalog.models import SupplierItem
 from apps.core.reset import confirm, reset_business_data
-from apps.exports.exporters import export_all
+from apps.exports.exporters import export_all, export_search, scope_from_search
 from apps.ingestion.services import import_source
 from apps.matching.engine import run_matching
 
 BASE = [("候选人材料_供应商A报价表.xlsx", "A", "供应商A"),
         ("候选人材料_供应商B报价表.xlsx", "B", "供应商B")]
+SEARCH_EXAMPLE_QUERY = "OE-VNL-1001"
+SEARCH_EXAMPLE_FILE = "search_result_OE-VNL-1001.xlsx"
 INCREMENT = [("samples/demo/供应商A报价表_v2.xlsx", "A", "供应商A"),
              ("samples/demo/供应商C目录.pdf", "C", "供应商C")]
 
@@ -45,6 +47,11 @@ class Command(BaseCommand):
             self.stdout.write(f"  匹配：{summary.as_text()}")
         for path in export_all(Path(opts["out"])):
             self.stdout.write(self.style.SUCCESS(f"已导出 {path}"))
+        # A search-and-export example: one OE number → the normalized product with every
+        # brand number, each supplier's offer, provenance and related review items.
+        example = Path(opts["out"]) / SEARCH_EXAMPLE_FILE
+        export_search(example, scope_from_search(SEARCH_EXAMPLE_QUERY))
+        self.stdout.write(self.style.SUCCESS(f"已导出查询结果示例 {example}"))
         if opts["reviewer"]:
             self.make_reviewer(opts["reviewer"], opts["password"])
 

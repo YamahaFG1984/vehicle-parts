@@ -64,8 +64,13 @@ def active_products():
             .prefetch_related("items__supplier", "items__part_numbers", "items__offers"))
 
 
-def search(query: str, *, supplier: str = "", state: str = "", limit: int = 200):
-    """Products whose members match an part number / keyword / brand / supplier."""
+def search(query: str, *, supplier: str = "", state: str = "", limit: int | None = 200):
+    """Products whose members match a part number / keyword / brand / supplier.
+
+    Returns [{product, members, hits, state, has_open}] sorted by product code. The same
+    function drives the search page and "export these results", so both always agree.
+    limit=None returns every match (used by exports).
+    """
     query = (query or "").strip()
     items = SupplierItem.objects.select_related("supplier", "product")
     if supplier:
@@ -84,7 +89,7 @@ def search(query: str, *, supplier: str = "", state: str = "", limit: int = 200)
         items = items.filter(cond).distinct()
     flags = review_flags()
     grouped: dict[int, list] = defaultdict(list)
-    for it in items[: limit * 3]:
+    for it in (items if limit is None else items[: limit * 3]):
         if it.product_id:
             grouped[it.product_id].append(it)
     products = active_products().filter(pk__in=grouped)
@@ -97,7 +102,7 @@ def search(query: str, *, supplier: str = "", state: str = "", limit: int = 200)
         results.append({"product": p, "members": members, "hits": grouped[p.pk],
                         "state": state_label, "has_open": has_open})
     results.sort(key=lambda r: r["product"].code)
-    return results[:limit]
+    return results if limit is None else results[:limit]
 
 
 def similar_numbers(query: str, limit: int = 8):

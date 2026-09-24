@@ -9,7 +9,11 @@
   <button type="submit">查询</button>
 </form>
 <p class="muted">编号比较忽略大小写、空格、连字符：<code>oevnl1001</code> 与 <code>OE-VNL-1001</code> 等价。</p>
-{% if q or supplier or state %}<p>{{ results|length }} 个归一产品</p>{% endif %}
+{% if q or supplier or state %}
+<p class="filters">{{ results|length }} 个归一产品{% if truncated %}（页面只显示前 {{ results|length }} 个，导出包含全部）{% endif %}
+{% if results %}<a class="btn" href="{% url 'exports:search' %}?q={{ q|urlencode }}&amp;supplier={{ supplier|urlencode }}&amp;state={{ state|urlencode }}">导出查询结果（xlsx）</a>
+<span class="muted">包含这些产品下的全部品牌号、各供应商报价、字段来源，以及相关的疑似重复与异常（可回写）</span>{% endif %}</p>
+{% endif %}
 {% if suggestions %}
 <div class="box"><strong>没有完全匹配。您是不是要找：</strong>
 {% for pn in suggestions %}<a class="tag" href="{% url 'catalog:product_detail' pn.item.product.code %}">{{ pn.number_raw }} · {{ pn.item.supplier.code }}</a> {% endfor %}</div>

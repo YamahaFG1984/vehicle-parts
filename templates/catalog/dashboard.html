@@ -11,7 +11,8 @@
   <div class="card"><div class="n">{{ open_issues }}</div><div class="l"><a href="{% url 'matching:issue_list' %}">未处理异常</a></div></div>
 </div>
 
-<h2>导出</h2>
+<h2>全量导出</h2>
+<p class="muted">导出整个档案。只想导出某次查询的结果，请在 <a href="{% url 'catalog:search' %}">查询</a> 页查询后点“导出查询结果”。</p>
 <p>
   <a class="btn" href="{% url 'exports:download' 'master' %}">主数据</a>
   <a class="btn" href="{% url 'exports:download' 'offers' %}">供应商报价</a>

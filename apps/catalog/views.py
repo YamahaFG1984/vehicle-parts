@@ -38,10 +38,14 @@ def search(request):
     q = request.GET.get("q", "").strip()
     supplier = request.GET.get("supplier", "").strip()
     state = request.GET.get("state", "").strip()
-    results = selectors.search(q, supplier=supplier, state=state) if (q or supplier or state) else []
+    limit = 200
+    results = selectors.search(q, supplier=supplier, state=state, limit=limit + 1) \
+        if (q or supplier or state) else []
+    truncated = len(results) > limit
+    results = results[:limit]
     suggestions = selectors.similar_numbers(q) if q and not results else []
     return render(request, "catalog/search.html", {
-        "q": q, "supplier": supplier, "state": state, "results": results,
+        "q": q, "supplier": supplier, "state": state, "results": results, "truncated": truncated,
         "suggestions": suggestions, "states": ["已确认归一", "疑似重复", "独立产品", "待补充"],
     })
 
