@@ -36,6 +36,15 @@ docker compose up -d --build
 docker compose exec web python manage.py createsuperuser
 ```
 
+## 通过 Cloudflare Tunnel 发布到外网
+
+`.env` 中设置 `DJANGO_SECRET_KEY`（长随机值）和 `DJANGO_PUBLIC_HOSTNAME=你的域名`（快速隧道 `cloudflared tunnel --url` 域名每次随机，填 `.trycloudflare.com`，并用 `GUNICORN_BIND=127.0.0.1:8010` 指定端口），然后二选一：
+
+- 本机：`./scripts/serve.sh`（gunicorn 生产模式，只监听 `127.0.0.1:8000`；常驻用 `deploy/systemd/vehicle-parts.service`），隧道指向 `http://127.0.0.1:8000`。
+- Docker：`.env` 再设 `CLOUDFLARE_TUNNEL_TOKEN`，`docker compose --profile tunnel up -d --build`，隧道指向 `http://web:8000`。
+
+详见 [分步实施 · 通过 Cloudflare Tunnel 发布](docs/implementation.html#tunnel)。不要用 `runserver` 对外提供服务。
+
 ## 常用命令
 
 | 命令 | 作用 |

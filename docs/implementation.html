@@ -164,10 +164,48 @@ docker compose exec web python manage.py createsuperuser
 docker compose exec web python manage.py demo --with-increment --noinput   # 可选：演示数据</code></pre>
 <ul>
   <li><code>db</code>：postgres:16，数据卷 <code>pgdata</code>，healthcheck 就绪后才启动 web。</li>
-  <li><code>web</code>：python:3.12-slim + uv 安装锁定依赖；入口脚本执行 <code>migrate</code>、<code>collectstatic</code> 后启动 gunicorn；<code>media</code> 卷保存原件归档。</li>
+  <li><code>web</code>：python:3.13-slim + uv 安装锁定依赖；入口脚本执行 <code>migrate</code>、<code>collectstatic</code> 后启动 gunicorn；<code>media</code> 卷保存原件归档。</li>
   <li>备份：同时备份 <code>pgdata</code> 与 <code>media</code> 卷（原件与数据库必须一致）。</li>
-  <li>未配置 HTTPS 时在 <code>.env</code> 设 <code>DJANGO_SECURE_COOKIES=false</code>；配置 HTTPS 后可开启 <code>DJANGO_SSL_REDIRECT</code> 与 <code>DJANGO_HSTS_SECONDS</code>。</li>
+  <li>通过 Cloudflare Tunnel 发布见 <a href="#tunnel">下一节</a>。完全没有 HTTPS（直接用 http:// 访问）时才需要在 <code>.env</code> 设 <code>DJANGO_SECURE_COOKIES=false</code>；配置 HTTPS 后可开启 <code>DJANGO_SSL_REDIRECT</code> 与 <code>DJANGO_HSTS_SECONDS</code>。</li>
 </ul>
+<h3 id="tunnel">通过 Cloudflare Tunnel 发布到外网</h3>
+<p>外网访问 <code>https://你的域名</code>，Cloudflare 终止 HTTPS，经隧道把请求转给本机 <code>http://127.0.0.1:8000</code>。应用只监听本机，公网 IP 不开放端口。</p>
+<h4>1. 应用配置（<code>.env</code>）</h4>
+<pre><code>DJANGO_SECRET_KEY=&lt;python -c "import secrets; print(secrets.token_urlsafe(50))" 的输出&gt;
+DJANGO_PUBLIC_HOSTNAME=parts.example.com     # 外网域名；自动加入允许的主机名与 CSRF 可信来源
+DJANGO_SECURE_COOKIES=true                   # HTTPS 在 Cloudflare 终止，Cookie 只走 HTTPS</code></pre>
+<ul>
+  <li>生产设置（<code>config/settings/production.py</code>）：<code>DEBUG=False</code>；信任 Cloudflare 传来的 <code>X-Forwarded-Proto: https</code>（因为应用只监听本机，这个头只可能来自隧道）；Session / CSRF Cookie 带 Secure；WhiteNoise 提供静态文件。</li>
+  <li>不设置 <code>DJANGO_PUBLIC_HOSTNAME</code> 的后果：外网访问报 400（DisallowedHost），登录提交报 403（CSRF）。</li>
+  <li>HTTP→HTTPS 跳转与 HSTS 建议在 Cloudflare 开启（SSL/TLS → Edge Certificates → Always Use HTTPS / HSTS）；也可用 <code>DJANGO_SSL_REDIRECT</code>、<code>DJANGO_HSTS_*</code> 在应用里开启。</li>
+  <li>访问日志第一列是 Cloudflare 传来的真实访客 IP（<code>CF-Connecting-IP</code>）；请求需在 100 秒内完成（Cloudflare 限制，gunicorn 超时设为 95 秒）；单次上传不超过 100 MB（Cloudflare 免费版限制）。</li>
+</ul>
+<h4>2a. 本机直接运行（不用 Docker，共用已有 PostgreSQL）</h4>
+<pre><code>./scripts/serve.sh        # 部署检查 → migrate → collectstatic → gunicorn 监听 127.0.0.1:8000
+# 常驻：
+sudo cp deploy/systemd/vehicle-parts.service /etc/systemd/system/
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now vehicle-parts</code></pre>
+<p><code>DJANGO_PUBLIC_HOSTNAME</code> 对开发设置同样生效，所以 <code>runserver</code> 放在隧道后面也能正常登录，方便临时调试；但对外长期提供服务请用 <code>serve.sh</code>：<code>runserver</code> 是开发服务器，<code>DEBUG=True</code> 时报错页会向访客暴露代码与配置。</p>
+<h4>2b. Docker Compose</h4>
+<pre><code># .env 中再设置 CLOUDFLARE_TUNNEL_TOKEN
+docker compose --profile tunnel up -d --build     # db + web + cloudflared</code></pre>
+<p>web 只映射到 <code>127.0.0.1:8000</code>；cloudflared 在同一网络内访问 <code>http://web:8000</code>。</p>
+<h4>快速隧道（临时演示，域名每次随机）</h4>
+<pre><code># .env
+DJANGO_PUBLIC_HOSTNAME=.trycloudflare.com     # 以点开头：允许所有子域，CSRF 可信来源自动为 https://*.trycloudflare.com
+GUNICORN_BIND=127.0.0.1:8010
+
+./scripts/serve.sh                                  # 终端 1：生产模式，监听 127.0.0.1:8010
+cloudflared tunnel --url http://127.0.0.1:8010      # 终端 2：输出本次的 https://….trycloudflare.com 地址</code></pre>
+<p>每次重启 cloudflared 地址都会变，但无需改配置。快速隧道适合演示，没有可用性保证；长期使用请建命名隧道并换成固定域名（下方第 3 步），把 <code>DJANGO_PUBLIC_HOSTNAME</code> 改为该域名即可。<code>--url</code> 建议写 <code>127.0.0.1</code> 而不是 <code>localhost</code>，避免解析到 IPv6 的 <code>::1</code>（gunicorn 只监听 IPv4 本机地址）。</p>
+
+<h4>3. 建隧道（二选一）</h4>
+<ul>
+  <li><strong>控制台（推荐）</strong>：Cloudflare Zero Trust → Networks → Tunnels → Create a tunnel（Cloudflared）。本机运行方式：按页面提示执行 <code>sudo cloudflared service install &lt;令牌&gt;</code>；Docker 方式：把令牌填入 <code>CLOUDFLARE_TUNNEL_TOKEN</code>。然后在 Public Hostname 中添加 <code>parts.example.com</code> → 服务 <code>HTTP</code>，URL 为 <code>127.0.0.1:8000</code>（本机）或 <code>web:8000</code>（Docker）。</li>
+  <li><strong>本地配置文件</strong>：按 <code>deploy/cloudflared/config.yml.example</code> 中的步骤 <code>cloudflared tunnel login / create / route dns</code>，再 <code>cloudflared tunnel run</code>。</li>
+</ul>
+<p>建议再在 Cloudflare Zero Trust → Access 为该域名加一层访问策略（如仅公司邮箱域名可访问），在应用登录之外多一道门。</p>
+
 <h3>GitHub Pages（本文档）</h3>
 <ol>
   <li>推送到 GitHub；仓库 Settings → Pages → Source 选 <em>Deploy from a branch</em>，分支 <code>main</code>，目录 <code>/docs</code>。</li>
