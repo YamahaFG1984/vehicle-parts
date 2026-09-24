@@ -138,3 +138,30 @@ def test_demo_refuses_without_tty(db, monkeypatch):
     assert confirm("?", noinput=True)
     with pytest.raises(CommandError, match="--noinput"):
         call_command("reset_data")
+
+
+def test_dashboard_is_search_first(client, staff, imported):
+    html = client.get("/").content.decode()
+    assert 'class="hero-search"' in html and 'action="/search/"' in html
+    assert 'class="search"' not in html  # no second, small box in the header on this page
+    assert "?q=OE-VNL-1001" in html  # clickable example queries
+    other = client.get("/review/").content.decode()
+    assert 'class="search"' in other  # the header box stays available elsewhere
+
+
+@pytest.mark.parametrize(("q", "expected"), [
+    ("Volvo VNL", "A:A-01-00"),             # words match different fields (make, model)
+    ("left side grille volvo", "A:A-03-L"),
+    ("OE VNL 1001", "A:A-01-00"),           # a part number typed with spaces
+])
+def test_multi_word_search(client, staff, imported, q, expected):
+    resp = client.get("/search/", {"q": q})
+    members = {str(m) for r in resp.context["results"] for m in r["members"]}
+    assert expected in members
+
+
+def test_every_word_must_match(client, staff, imported):
+    resp = client.get("/search/", {"q": "grille freightliner"})
+    assert resp.context["results"]
+    assert all(any(m.fitment_make == "Freightliner" for m in r["members"])
+               for r in resp.context["results"])

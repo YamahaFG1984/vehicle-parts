@@ -2,12 +2,20 @@ from django.db.models import Count, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
-from apps.ingestion.models import ImportBatch, SourceFile
+from apps.ingestion.models import ImportBatch, SourceFile, Supplier
 from apps.matching.models import Issue, MatchCandidate
 
 from . import selectors
 from .models import FieldValue, Product, SupplierItem
 from .normalizers import normalize_number
+
+SEARCH_EXAMPLES = ["OE-VNL-1001", "b01x", "Side Grille", "Volvo VNL", "Air Filter"]
+
+
+def _search_box_context(**extra):
+    """Choices for the shared search box (dashboard and search page)."""
+    return {"suppliers": Supplier.objects.order_by("code"), "examples": SEARCH_EXAMPLES,
+            "states": ["已确认归一", "疑似重复", "独立产品", "待补充"], **extra}
 
 
 def dashboard(request):
@@ -31,6 +39,7 @@ def dashboard(request):
         "by_supplier": SupplierItem.objects.values("supplier__code", "supplier__name")
         .annotate(n=Count("id")).order_by("supplier__code"),
     }
+    context.update(_search_box_context())
     return render(request, "catalog/dashboard.html", context)
 
 
@@ -44,10 +53,10 @@ def search(request):
     truncated = len(results) > limit
     results = results[:limit]
     suggestions = selectors.similar_numbers(q) if q and not results else []
-    return render(request, "catalog/search.html", {
-        "q": q, "supplier": supplier, "state": state, "results": results, "truncated": truncated,
-        "suggestions": suggestions, "states": ["已确认归一", "疑似重复", "独立产品", "待补充"],
-    })
+    return render(request, "catalog/search.html", _search_box_context(
+        q=q, supplier=supplier, state=state, results=results, truncated=truncated,
+        suggestions=suggestions, show_examples=not (q or supplier or state),
+    ))
 
 
 def product_detail(request, code):

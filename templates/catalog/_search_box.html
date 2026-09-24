@@ -1,0 +1,41 @@
+{# Prominent search box shared by the dashboard and the search page. #}
+<form class="hero-search" action="{% url 'catalog:search' %}" method="get" role="search">
+  <div class="hero-search-bar">
+    <svg class="hero-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+    <input type="search" name="q" value="{{ q|default:'' }}" autocomplete="off" autofocus
+           placeholder="输入产品编号、品牌号、OE 号或关键词，如 OE-VNL-1001、B01X、Side Grille"
+           aria-label="搜索产品">
+    <button type="submit">搜索</button>
+  </div>
+  <div class="hero-search-options">
+    <label>供应商
+      <select name="supplier">
+        <option value="">全部</option>
+        {% for s in suppliers %}<option value="{{ s.code }}" {% if s.code|lower == supplier|lower %}selected{% endif %}>{{ s.code }} · {{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>分类
+      <select name="state">
+        <option value="">全部</option>
+        {% for s in states %}<option {% if s == state %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <span class="muted">编号忽略大小写、空格和连字符 · 按 <kbd>/</kbd> 随时回到搜索框</span>
+  </div>
+  {% if show_examples %}
+  <div class="hero-search-examples">
+    <span class="muted">试试：</span>
+    {% for ex in examples %}<a class="tag" href="{% url 'catalog:search' %}?q={{ ex|urlencode }}">{{ ex }}</a> {% endfor %}
+  </div>
+  {% endif %}
+</form>
+<script>
+  // "/" focuses the search box, as on most search-first sites.
+  document.addEventListener("keydown", function (e) {
+    var t = e.target.tagName;
+    if (e.key === "/" && t !== "INPUT" && t !== "TEXTAREA" && t !== "SELECT") {
+      var box = document.querySelector(".hero-search input[name=q]");
+      if (box) { e.preventDefault(); box.focus(); box.select(); }
+    }
+  });
+</script>

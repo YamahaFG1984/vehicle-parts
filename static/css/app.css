@@ -50,3 +50,31 @@ button.secondary { background: var(--surface-2); color: var(--text); border: 1px
 pre.raw { background: var(--surface-2); padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 12.5px; }
 ul.radio { list-style: none; padding: 0; } ul.radio li { margin: 4px 0; }
 .pager { margin: 10px 0; }
+
+/* Search-first: large search box on the dashboard and the search page. */
+.hero-search { max-width: 760px; margin: 8px 0 26px; }
+.hero-search-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 6px 6px 18px; box-shadow: 0 1px 6px rgba(0, 0, 0, .08);
+}
+.hero-search-bar:focus-within { border-color: var(--accent); box-shadow: 0 1px 10px rgba(0, 0, 0, .14); }
+.hero-search-icon { width: 20px; height: 20px; flex: none; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+.hero-search-bar input {
+  flex: 1; min-width: 0; border: 0; background: transparent; font-size: 17px; padding: 8px 4px; outline: none;
+}
+.hero-search-bar button { border-radius: 999px; padding: 9px 22px; font-size: 15px; }
+.hero-search-options, .hero-search-examples {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 10px 18px 0; font-size: 13.5px;
+}
+.hero-search-options label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.hero-search-options select { font-size: 13.5px; padding: 3px 6px; }
+.hero-search-examples .tag { text-decoration: none; color: var(--text); }
+.hero-search-examples .tag:hover { border-color: var(--accent); color: var(--accent); }
+kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface-2); }
+@media (max-width: 760px) {
+  .hero-search-bar { padding-left: 12px; }
+  .hero-search-bar input { font-size: 16px; }
+  .hero-search-bar button { padding: 8px 14px; }
+  .hero-search-options, .hero-search-examples { margin-left: 4px; margin-right: 4px; }
+}

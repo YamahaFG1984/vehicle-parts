@@ -8,10 +8,13 @@
 <body>
 <header class="top"><div class="inner">
   <a class="brand" href="{% url 'catalog:dashboard' %}">零件资料归一化</a>
+  {% block header_search %}
   <form class="search" action="{% url 'catalog:search' %}" method="get">
     <input type="search" name="q" value="{{ q|default:'' }}" placeholder="编号 / OE / 关键词 / 供应商">
   </form>
+  {% endblock %}
   <nav>
+    <a href="{% url 'catalog:search' %}">搜索</a>
     <a href="{% url 'catalog:search' %}?state=已确认归一">产品</a>
     <a href="{% url 'matching:group_queue' %}">复核队列</a>
     <a href="{% url 'matching:issue_list' %}">异常</a>

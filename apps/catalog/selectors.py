@@ -64,6 +64,21 @@ def active_products():
             .prefetch_related("items__supplier", "items__part_numbers", "items__offers"))
 
 
+def _term(text: str) -> Q:
+    """Fields one search word (or the whole query) can match."""
+    cond = (
+        Q(name__icontains=text) | Q(brand__icontains=text)
+        | Q(supplier__code__iexact=text) | Q(supplier__name__icontains=text)
+        | Q(product__code__iexact=text) | Q(source_ref__iexact=text)
+        | Q(fitment_make__icontains=text) | Q(fitment_model__icontains=text)
+        | Q(category__icontains=text.lower().replace(" ", "_"))
+    )
+    qn = normalize_number(text)
+    if qn:
+        cond |= Q(part_numbers__number_norm__contains=qn)
+    return cond
+
+
 def search(query: str, *, supplier: str = "", state: str = "", limit: int | None = 200):
     """Products whose members match a part number / keyword / brand / supplier.
 
@@ -76,16 +91,17 @@ def search(query: str, *, supplier: str = "", state: str = "", limit: int | None
     if supplier:
         items = items.filter(Q(supplier__code__iexact=supplier) | Q(supplier__name__icontains=supplier))
     if query:
-        qn = normalize_number(query)
-        cond = (
-            Q(name__icontains=query) | Q(brand__icontains=query)
-            | Q(supplier__code__iexact=query) | Q(supplier__name__icontains=query)
-            | Q(product__code__iexact=query) | Q(source_ref__iexact=query)
-            | Q(fitment_make__icontains=query) | Q(fitment_model__icontains=query)
-            | Q(category__icontains=query.lower().replace(" ", "_"))
-        )
-        if qn:
-            cond |= Q(part_numbers__number_norm__contains=qn)
+        # Search-box semantics: every word must match some field ("Volvo VNL" = make Volvo AND
+        # model VNL); the whole query also matches as one part number ("OE VNL 1001").
+        words = query.split()
+        cond = Q()
+        for word in words:
+            cond &= _term(word)
+        if len(words) > 1:
+            cond |= _term(query)
+            qn = normalize_number(query)
+            if qn:
+                cond |= Q(part_numbers__number_norm__contains=qn)
         items = items.filter(cond).distinct()
     flags = review_flags()
     grouped: dict[int, list] = defaultdict(list)

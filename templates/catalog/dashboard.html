@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% block header_search %}{% endblock %}
 {% block content %}
 <h1>概览</h1>
+{% include "catalog/_search_box.html" with show_examples=True %}
 <div class="cards">
   <div class="card"><div class="n">{{ item_count }}</div><div class="l">供应商条目</div></div>
   <div class="card"><div class="n">{{ product_count }}</div><div class="l">归一产品</div></div>
@@ -12,7 +14,7 @@
 </div>
 
 <h2>全量导出</h2>
-<p class="muted">导出整个档案。只想导出某次查询的结果，请在 <a href="{% url 'catalog:search' %}">查询</a> 页查询后点“导出查询结果”。</p>
+<p class="muted">导出整个档案。只想导出某次查询的结果，请用上面的搜索框查询后点“导出查询结果”。</p>
 <p>
   <a class="btn" href="{% url 'exports:download' 'master' %}">主数据</a>
   <a class="btn" href="{% url 'exports:download' 'offers' %}">供应商报价</a>

@@ -1,14 +1,9 @@
 {% extends "base.html" %}
 {% block title %}搜索 · 零件资料归一化{% endblock %}
+{% block header_search %}{% endblock %}
 {% block content %}
-<h1>查询</h1>
-<form class="filters" method="get">
-  <input type="search" name="q" value="{{ q }}" placeholder="任一编号、OE、关键词、品牌" autofocus>
-  <input name="supplier" value="{{ supplier }}" placeholder="供应商代码/名称" size="12">
-  <select name="state"><option value="">全部分类</option>{% for s in states %}<option {% if s == state %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
-  <button type="submit">查询</button>
-</form>
-<p class="muted">编号比较忽略大小写、空格、连字符：<code>oevnl1001</code> 与 <code>OE-VNL-1001</code> 等价。</p>
+<h1>搜索</h1>
+{% include "catalog/_search_box.html" with show_examples=show_examples %}
 {% if q or supplier or state %}
 <p class="filters">{{ results|length }} 个归一产品{% if truncated %}（页面只显示前 {{ results|length }} 个，导出包含全部）{% endif %}
 {% if results %}<a class="btn" href="{% url 'exports:search' %}?q={{ q|urlencode }}&amp;supplier={{ supplier|urlencode }}&amp;state={{ state|urlencode }}">导出查询结果（xlsx）</a>
