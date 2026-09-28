@@ -33,7 +33,7 @@
     <li><a href="#match">5. 匹配规则</a>
       <ol><li><a href="#blocking">5.1 候选生成</a></li><li><a href="#compare">5.2 字段比较</a></li><li><a href="#decide">5.3 分类决策</a></li><li><a href="#cluster">5.4 聚类与防传递</a></li><li><a href="#samples">5.5 样本结果</a></li><li><a href="#increment-result">5.6 增量结果</a></li></ol></li>
     <li><a href="#review">6. 人工复核与回写</a>
-      <ol><li><a href="#query-export">6.1 查询与导出</a></li></ol></li>
+      <ol><li><a href="#query-export">6.1 查询与导出</a></li><li><a href="#images-stock">6.2 图片与库存</a></li></ol></li>
     <li><a href="#maint">7. 持续维护</a></li>
     <li><a href="#tradeoffs">8. 取舍汇总</a></li>
     <li><a href="#limits">9. 已知局限</a></li>
@@ -229,6 +229,9 @@
 <tr><td>PartNumber</td><td>item, number_raw, number_norm, kind(supplier_sku/oe), source_record</td><td>number_norm trigram GIN；(item, kind, number_norm) 唯一</td><td>统一的编号检索入口；<code>number_norm</code> = 大写并去除空格、连字符、点、斜杠</td></tr>
 <tr><td>SupplierOffer</td><td>item, price(Decimal，可空), currency, moq, quote_date, source_record, is_current</td><td>price ≥ 0 检查约束；每条目仅一条 is_current（部分唯一）</td><td>每家每次报价一行，不换算币种</td></tr>
 <tr><td>Product</td><td>code, status(active/retired), merged_into, category, position, fitment_label, dims_label, attr_consensus(JSON)</td><td>code 唯一</td><td>归一产品；每个条目恰属于一个产品（初始为单成员）；聚类变化时编号尽量稳定，被并入的产品标 retired 并指向 merged_into</td></tr>
+<tr><td>ItemImage</td><td>item, image, thumbnail, width, height, source(supplier/own_photo/catalog/other), caption, is_primary, uploaded_by</td><td>每个 SKU 仅一张主图（部分唯一）</td><td>SKU 图片；产品页汇总其成员的图片</td></tr>
+<tr><td>StockLevel</td><td>item, warehouse, quantity, as_of, source(manual/import), stock_import, locator, note, is_current, recorded_by</td><td>(item, warehouse) 仅一条 is_current；quantity ≥ 0</td><td>库存快照，旧值保留为历史</td></tr>
+<tr><td>StockImport</td><td>original_name, sha256, stats, report, uploaded_by</td><td>—</td><td>一次库存表导入；未匹配的行记在 report</td></tr>
 </tbody></table></div>
 <h4>matching</h4>
 <div class="table-wrap"><table>
@@ -483,6 +486,36 @@ else:
   <li><strong>离线回写</strong>：<code>review_list.xlsx</code> 的“疑似重复”表带 <code>candidate_id</code> 与空白的 <code>decision</code>（merge / reject / needs_info）、<code>note</code> 列；“异常”表带 <code>issue_id</code> 与 <code>decision</code>（resolve / ignore）。<code>import_review</code> 命令校验后回写，未知 ID 或非法取值逐行报错、整体不提交。</li>
   <li><strong>人工决定优先</strong>：候选保存 <code>evidence_hash</code>（双方当前归一属性的哈希）。重跑规则时，如果人工决定的 evidence_hash 未变，保持人工决定；变了则重新打开（status=pending），并写 ReviewDecision(action=reopened, via=system) 说明“某字段由 X 变为 Y”。</li>
   <li><strong>审计</strong>：所有决定（包括规则自动决定的首次产生、系统重新打开）写入 ReviewDecision，含操作人、渠道、备注、决定时的快照。</li>
+</ul>
+
+<h3 id="images-stock">6.2 图片与库存</h3>
+<div class="tradeoff"><h4>图片挂在 SKU 上，产品页汇总展示</h4><dl>
+<dt>选择</dt><dd>每个 SKU（供应商条目）可上传多张图片、设一张主图，记录来源（供应商提供 / 自己拍摄 / 目录截图）、上传人和时间；产品页、搜索结果、复核分组页汇总展示其下所有 SKU 的图片或主图缩略图。</dd>
+<dt>理由</dt><dd>图片大多来自供应商、本就属于某个 SKU；归一产品会随合并 / 拆分而变化，挂在 SKU 上时图片自动跟着 SKU 走，不会挂错。复核时并排看图是判断“是不是同一件”的关键证据。</dd>
+<dt>取舍</dt><dd>公司自己拍的实物照也要挂到某个 SKU 上（通常是实际入库的那个品牌号）。</dd>
+</dl></div>
+<ul>
+  <li>只接受 JPG / PNG / WebP，每张不超过 10 MB，用 Pillow 校验确实是图片（一批里有一张不合格则整批不保存）；上传时按照片方向旋正并生成 480px 缩略图，列表只加载缩略图。</li>
+  <li>图片经需要登录的视图 <code>/images/&lt;id&gt;/</code> 提供，不直接暴露 media 目录。</li>
+</ul>
+<div class="tradeoff"><h4>上传控件：FilePond（图片与 Excel / CSV / PDF 共用）</h4><dl>
+<dt>选择</dt><dd>SKU 图片、资料导入、库存表导入三处都用 FilePond 拖拽区：支持拖拽、粘贴、多选、预览、中文提示；在浏览器里先校验类型和大小，图片先按拍摄方向旋正并缩到长边 2000px 再上传。文件仍随普通表单提交（<code>storeAsFile</code>），Django 视图、CSRF、服务器端校验都不变；JS 未加载时退回普通文件框。</dd>
+<dt>理由</dt><dd>对比 Uppy（需要单独的 JSON 上传接口、体积大）与 Dropzone（无浏览器端压缩、维护慢），FilePond 与现有表单提交方式最契合；手机照片 5–10 MB，经隧道上传前先压缩到几百 KB 甚至更小。</dd>
+<dt>取舍</dt><dd>文件放在 <code>static/vendor/filepond/</code>（版本见 <code>VERSIONS.txt</code>），不从 CDN 加载，升级需要手动替换文件。</dd>
+</dl></div>
+<ul>
+  <li>配置写在输入框的 <code>data-upload-*</code> 属性上（允许的扩展名、大小上限、图片缩放尺寸、类型提示），由 <code>static/js/uploads.js</code> 统一初始化；不用 <code>data-accept</code> 这类名字，因为 FilePond 会把 <code>data-*</code> 属性当作自己的选项读取。</li>
+  <li>图片还在浏览器里处理时禁用提交按钮；列表里有被拒绝的文件时阻止提交。</li>
+  <li>真实浏览器检查：<code>tests/browser/check_uploads.py</code>（Playwright；验证缩放到 2000px、类型拦截、Excel 进入预览页、无 JS 错误）。</li>
+</ul>
+<div class="tradeoff"><h4>库存只记快照，不做出入库流水</h4><dl>
+<dt>选择</dt><dd>按 SKU + 仓库记录“数量 / 截至日期 / 来源”；新快照取代旧快照，旧的保留为历史；产品页显示合计，并按 SKU、仓库列出。</dd>
+<dt>理由</dt><dd>出入库、占用、调拨属于 ERP / 仓库系统；产品数据中心只需要回答“这个零件有没有货、在哪”。按 SKU 记，是因为仓库里放的是某个品牌的具体零件。</dd>
+<dt>取舍</dt><dd>库存的准确度取决于导入 / 录入的频率；页面显示每行的截至日期，提示时效。</dd>
+</dl></div>
+<ul>
+  <li>录入：SKU 页手工修改；或导入库存表（网页“导入”页，或 <code>import_stock 文件 [--supplier] [--warehouse] [--as-of]</code>）。库存表按表头别名识别“编号 / SKU”“数量 / 库存”（必需）和“供应商”“仓库”“日期”（可选）；按“供应商 + 规范化编号”匹配 SKU，没有供应商列时只在编号全库唯一时匹配；匹配不上、数量无法识别的行不写入，列在导入结果页；每条库存记录来源文件的位置。</li>
+  <li>导出：主数据与查询导出增加“库存”表，并在产品、成员表中加“库存合计 / 库存”“图片数”列。</li>
 </ul>
 
 <h3 id="query-export">6.1 查询与导出</h3>
