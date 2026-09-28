@@ -46,11 +46,12 @@
 <div class="table-wrap"><table>
 <thead><tr><th>交付要求</th><th>交付物</th></tr></thead>
 <tbody>
-<tr><td>1. 可运行 Demo</td><td>本仓库（Django 5.2 + PostgreSQL）。本机：<code>uv run python manage.py demo --with-increment --noinput</code> 后 <code>runserver</code>；服务器：<code>docker compose up -d --build</code>。步骤见 <a href="implementation.html#env">环境准备</a>、<a href="implementation.html#deploy">部署</a>。</td></tr>
+<tr><td>1. 可运行 Demo</td><td>本仓库（Django 5.2 + PostgreSQL）。本机：<code>uv run python manage.py demo --with-increment --noinput --reviewer 用户名 --password 密码</code>（导入样本并创建登录账号）后 <code>runserver</code>，用该账号在登录页登录（全站需登录）；服务器：<code>docker compose up -d --build</code>；需要外网访问时经 Cloudflare Tunnel 发布（<code>scripts/serve.sh</code>）。步骤见 <a href="implementation.html#env">环境准备</a>、<a href="implementation.html#deploy">部署</a>、<a href="implementation.html#tunnel">Cloudflare Tunnel</a>。</td></tr>
 <tr><td>2. 简短说明</td><td>本页第 2~4 节；详细版见 <a href="design.html#model">数据模型</a>、<a href="design.html#flow">处理流程</a>、<a href="design.html#match">匹配规则</a>、<a href="design.html#review">人工复核</a>。</td></tr>
-<tr><td>3. 处理结果样例</td><td><a href="samples/master_data.xlsx">master_data.xlsx</a>（归一产品、成员品牌号、字段来源）、<a href="samples/supplier_offers.xlsx">supplier_offers.xlsx</a>（各供应商分别报价）、<a href="samples/import_report.xlsx">import_report.xlsx</a>（导入与增量报告）</td></tr>
+<tr><td>3. 处理结果样例</td><td><a href="samples/master_data.xlsx">master_data.xlsx</a>（归一产品、成员品牌号、库存、字段来源）、<a href="samples/supplier_offers.xlsx">supplier_offers.xlsx</a>（各供应商分别报价）、<a href="samples/import_report.xlsx">import_report.xlsx</a>（导入与增量报告）</td></tr>
 <tr><td>3. 异常 / 待确认清单</td><td><a href="samples/review_list.xlsx">review_list.xlsx</a>：“疑似重复”表（触发原因、冲突字段、缺失信息、置信度、建议动作）+“异常清单”表；黄色 decision / note 列可直接填写回写。</td></tr>
 <tr><td>能力 4：查询并导出整理结果</td><td>查询页按编号 / 品牌号 / OE / 关键词 / 供应商 / 分类查询后，点“导出查询结果（xlsx）”；产品页可“导出此产品”；命令行 <code>export_data --query …</code>。样例：<a href="samples/search_result_OE-VNL-1001.xlsx">search_result_OE-VNL-1001.xlsx</a>（查询 OE-VNL-1001 → 一个归一产品下 A、B、C 三家的品牌号、分别报价、字段来源）。详见 <a href="design.html#query-export">查询与导出</a>。</td></tr>
+<tr><td>扩展（题目之外）</td><td>SKU 图片（多张、主图，产品页汇总，复核分组页并排对照）；库存快照（手工录入或导入库存表，产品页合计）；产品页 SKU 表按价格 / MOQ / 报价日期 / 库存排序并可按币种筛选。详见 <a href="design.html#images-stock">图片与库存</a>。</td></tr>
 <tr><td>4. 后续维护说明</td><td>本页第 6 节；详细版见 <a href="design.html#maint">持续维护</a>、<a href="implementation.html#ops">维护手册</a>。</td></tr>
 </tbody></table></div>
 <p class="meta">样例由 <code>demo --with-increment</code> 生成：导入供应商 A、B 原始报价表，再导入 A 的新版本和供应商 C 的 PDF 目录。</p>
@@ -147,7 +148,7 @@
 <div class="table-wrap"><table>
 <thead><tr><th>入口</th><th>用法</th></tr></thead>
 <tbody>
-<tr><td>Web 复核队列 <code>/review/</code>（按疑似组）</td><td>相互关联的待确认关系归为一组（样本 50 对 → 7 组），一页内并排对照组内记录，每对选 确认合并 / 不是同一产品 / 待补充资料，一次提交，或整组判为不同；有硬冲突的合并必须填写理由。逐对视图 <code>/review/pairs/</code> 与候选详情页提供字段对照、原始行、建议动作和审计记录。</td></tr>
+<tr><td>Web 复核队列 <code>/review/</code>（按疑似组）</td><td>相互关联的待确认关系归为一组（样本 50 对 → 7 组），一页内并排对照组内记录（含各 SKU 的主图，建议动作里“查看图片”即指这里），每对选 确认合并 / 不是同一产品 / 待补充资料，一次提交，或整组判为不同；有硬冲突的合并必须填写理由。逐对视图 <code>/review/pairs/</code> 与候选详情页提供字段对照、原始行、建议动作和审计记录。</td></tr>
 <tr><td>产品详情页</td><td>列出每条已合并关系，可进入后拆分</td></tr>
 <tr><td>xlsx 离线回写</td><td>导出 <code>review_list.xlsx</code> → 填 decision / note → <code>import_review 文件 --reviewer 姓名</code>；任一行有误则整份不写入并逐行报错</td></tr>
 <tr><td>Admin</td><td>候选批量决定；证据数据只读</td></tr>
@@ -188,7 +189,7 @@
 
 <h2 id="route">8. 演示路线（约 10 分钟）</h2>
 <ol>
-  <li><strong>数据结构与流程</strong>（2 分钟）：本页第 2 节的三层模型与流程图；运行 <code>demo</code>，看导入报告。</li>
+  <li><strong>数据结构与流程</strong>（2 分钟）：本页第 2 节的三层模型与流程图；运行 <code>demo --noinput --reviewer … --password …</code>，登录后看导入报告。</li>
   <li><strong>查询、原件与字段来源</strong>（2 分钟）：在首页大搜索框输入 <code>OE-VNL-1001</code>（也可输入 <code>b01x</code>，编号比较忽略大小写和连字符）→ 点“导出查询结果”，打开 xlsx 看品牌号、分别报价、字段来源 → 回到产品页（A、B 两家品牌号、分别报价）→ 点一个条目 → 字段级来源、原始行、下载原件。</li>
   <li><strong>判断依据、风险控制、人工确认入口</strong>（3 分钟）：复核队列按组打开 VNL 前格栅这一组（组内并排对照）→ 把 A-021 ↔ B-019（OE-SHARED-01，类别冲突）选“不是同一产品”，A-013 那一对选“确认合并”，一次提交；打开 B-025 看“疑似品名错误”；产品页演示拆分；Admin 看被排除的 A-008 / A-010。</li>
   <li><strong>自动 vs 人工</strong>（1 分钟）：对照本页第 3 节，指出刚才哪些是规则自动处理、哪些是人工决定（审计记录里可见）。</li>
