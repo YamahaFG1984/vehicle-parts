@@ -26,3 +26,9 @@ def show(value):
 @register.filter
 def field_label(name):
     return FIELD_LABELS.get(name) or EXTRA_LABELS.get(name) or name
+
+
+@register.filter
+def lookup(mapping, key):
+    """{{ dict|lookup:key }} — dictionary access with a variable key."""
+    return mapping.get(key, "") if hasattr(mapping, "get") else ""

@@ -1,0 +1,4 @@
+{% load vp %}{% with desc="-"|add:field %}<th class="sortable{% if sort == field or sort == desc %} is-sorted{% endif %}"
+    aria-sort="{% if sort == field %}ascending{% elif sort == desc %}descending{% else %}none{% endif %}">
+  <a href="{{ sort_links|lookup:field }}#offers" title="点击按{{ label }}{% if sort == field %}降序{% else %}升序{% endif %}排列">{{ label }}<span class="sort-arrow">{% if sort == field %}▲{% elif sort == desc %}▼{% else %}↕{% endif %}</span></a>
+</th>{% endwith %}

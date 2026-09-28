@@ -48,11 +48,20 @@
 {% endfor %}
 </tbody></table></div>
 
-<h2>SKU / 品牌号 / 供应商资料 / 分别报价</h2>
+<h2 id="offers">SKU / 品牌号 / 供应商资料 / 分别报价</h2>
+<div class="filters">
+  <span class="muted">共 {{ members|length }} 个 SKU{% if currency %}，其中 {{ rows|length }} 个以 {{ currency }} 报价{% endif %} · 点表头排序</span>
+  {% if currency_links|length > 2 %}
+  <span class="muted">币种：</span>
+  {% for label, url, active in currency_links %}<a class="tag{% if active %} info{% endif %}" href="{{ url }}#offers">{{ label }}</a>{% endfor %}
+  {% endif %}
+  {% if sort %}<a href="?{% if currency %}currency={{ currency }}{% endif %}#offers">恢复默认顺序</a>{% endif %}
+</div>
+{% if mixed_currency_sort %}<p class="muted">含多种币种：价格不做汇率换算，按币种分组后在组内排序；只比较同一币种请用上面的币种筛选。</p>{% endif %}
 <div class="table-wrap"><table>
-<thead><tr><th>图片</th><th>供应商</th><th>编号</th><th>库存</th><th>原始名称</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>OE</th><th>当前报价</th><th>MOQ</th><th>报价日期</th><th>来源</th></tr></thead>
+<thead><tr><th>图片</th><th>供应商</th><th>编号</th>{% include "catalog/_sort_th.html" with field="stock" label="库存" %}<th>原始名称</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>OE</th>{% include "catalog/_sort_th.html" with field="price" label="当前报价" %}{% include "catalog/_sort_th.html" with field="moq" label="MOQ" %}{% include "catalog/_sort_th.html" with field="date" label="报价日期" %}<th>来源</th></tr></thead>
 <tbody>
-{% for m in members %}
+{% for m in rows %}
 {% with offer=m.current_offer %}
 <tr>
   <td>{% if m.primary_image %}<img class="thumb" src="{{ m.primary_image.thumb_url }}" alt="{{ m }}" loading="lazy">{% else %}<span class="thumb-empty">无图</span>{% endif %}</td>
@@ -66,9 +75,10 @@
   <td class="mono muted">{{ m.current_record.locator_label }}</td>
 </tr>
 {% endwith %}
+{% empty %}<tr><td colspan="13" class="muted">没有以 {{ currency }} 报价的 SKU</td></tr>
 {% endfor %}
 </tbody></table></div>
-<p class="muted">报价按原币种保存，不做换算；历史报价见各条目详情。</p>
+<p class="muted">报价按原币种保存，不做换算；没有报价（或排序字段为空）的 SKU 始终排在最后；历史报价见各条目详情。</p>
 
 <h2>归一依据（已合并的关系）</h2>
 {% if internal %}

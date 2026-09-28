@@ -154,3 +154,41 @@ def similar_numbers(query: str, limit: int = 8):
         .filter(sim__gt=0.3).select_related("item__supplier", "item__product")
         .order_by("-sim")[:limit]
     )
+
+
+# ---------------------------------------------------------------------------- SKU table sorting
+
+MEMBER_SORTS = {
+    "price": lambda m: m.current_offer.price if m.current_offer else None,
+    "moq": lambda m: m.current_offer.moq if m.current_offer else None,
+    "date": lambda m: m.current_offer.quote_date if m.current_offer else None,
+    "stock": lambda m: m.stock_total,
+}
+
+
+def _default_order(m):
+    return (m.supplier.code, m.supplier_part_no)
+
+
+def sort_members(members: list, sort: str = "", currency: str = "") -> tuple[list, str]:
+    """Order the SKUs of a product page. Returns (rows, the sort actually applied).
+
+    sort is one of price / moq / date / stock, prefixed with "-" for descending. SKUs without
+    the value always come last. Prices in different currencies are never converted, so a
+    price sort groups by currency (alphabetically) and orders by price inside each group;
+    `currency` keeps only the SKUs quoted in that currency.
+    """
+    rows = sorted(members, key=_default_order)
+    if currency:
+        rows = [m for m in rows if m.current_offer and m.current_offer.currency == currency]
+    desc = sort.startswith("-")
+    field = sort.lstrip("-")
+    if field not in MEMBER_SORTS:
+        return rows, ""
+    value = MEMBER_SORTS[field]
+    present = [m for m in rows if value(m) is not None]
+    missing = [m for m in rows if value(m) is None]
+    present.sort(key=value, reverse=desc)  # stable: ties keep supplier order
+    if field == "price":
+        present.sort(key=lambda m: m.current_offer.currency or "")
+    return present + missing, sort

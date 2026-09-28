@@ -1,6 +1,7 @@
 import mimetypes
 import tempfile
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -97,9 +98,29 @@ def product_detail(request, code):
         m.primary_image = next((g for g in gallery if g.item_id == m.pk and g.is_primary), None)
         levels = [s for s in stock_levels if s.item_id == m.pk]
         m.stock_total = sum(s.quantity for s in levels) if levels else None
+    # SKU table: sortable by price / MOQ / quote date / stock, filterable by currency.
+    currencies = sorted({m.current_offer.currency for m in members
+                         if m.current_offer and m.current_offer.currency})
+    currency = request.GET.get("currency", "")
+    currency = currency if currency in currencies else ""
+    rows, sort = selectors.sort_members(members, request.GET.get("sort", ""), currency)
+
+    def sort_url(field):
+        nxt = f"-{field}" if sort == field else field  # click again to reverse
+        return "?" + urlencode({k: v for k, v in (("sort", nxt), ("currency", currency)) if v})
+
+    def currency_url(code):
+        return "?" + urlencode({k: v for k, v in (("sort", sort), ("currency", code)) if v})
+
     return render(request, "catalog/product_detail.html", {
         "product": product, "members": members, "internal": internal, "external": external,
         "state": state, "has_open": has_open,
+        "rows": rows, "sort": sort, "currency": currency,
+        "sort_links": {f: sort_url(f) for f in selectors.MEMBER_SORTS},
+        "currency_links": [("全部", currency_url(""), not currency)]
+        + [(c, currency_url(c), c == currency) for c in currencies],
+        "mixed_currency_sort": sort.lstrip("-") == "price" and not currency
+        and len(currencies) > 1,
         "images": gallery,
         "stock_levels": stock_levels,
         "stock_total": sum(s.quantity for s in stock_levels) if stock_levels else None,
