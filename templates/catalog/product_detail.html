@@ -6,6 +6,38 @@
 <p class="muted">{{ product.category }} {{ product.position }} · {{ product.fitment_label }} · {{ product.dims_label }}
 · <a href="{% url 'exports:search' %}?q={{ product.code|urlencode }}">导出此产品（xlsx）</a></p>
 
+<h2 id="images">图片</h2>
+{% if images %}
+<p class="muted">汇总本产品下所有 SKU 的图片（{{ images|length }} 张），每张注明来自哪个 SKU；上传、设主图请到对应 SKU 页面。</p>
+<div class="gallery">
+{% for img in images %}
+<figure class="gallery-item{% if img.is_primary %} is-primary{% endif %}">
+  <a href="{{ img.get_absolute_url }}" target="_blank" rel="noopener"><img src="{{ img.thumb_url }}" alt="{{ img.item }} {{ img.caption }}" loading="lazy"></a>
+  <figcaption>
+    <a href="{% url 'catalog:item_detail' img.item_id %}#images">{{ img.item }}</a>
+    {% if img.is_primary %}<span class="tag ok">主图</span>{% endif %}
+    <span class="tag">{{ img.get_source_display }}</span> {{ img.caption }}
+  </figcaption>
+</figure>
+{% endfor %}
+</div>
+{% else %}
+<p class="muted">还没有图片。在下方点任一 SKU 编号进入 SKU 页面上传。</p>
+{% endif %}
+
+<h2 id="stock">库存</h2>
+{% if stock_levels %}
+<p>合计 <span class="stock-total">{{ stock_total }}</span> <span class="muted">（{{ members|length }} 个 SKU 的当前库存之和；各行截至日期可能不同）</span></p>
+<div class="table-wrap"><table>
+<thead><tr><th>SKU</th><th>仓库</th><th>数量</th><th>截至日期</th><th>来源</th></tr></thead>
+<tbody>{% for s in stock_levels %}
+<tr><td><a href="{% url 'catalog:item_detail' s.item_id %}#stock">{{ s.item }}</a></td><td>{{ s.warehouse }}</td>
+<td><strong>{{ s.quantity }}</strong></td><td>{{ s.as_of }}</td><td>{{ s.get_source_display }}</td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}
+<p class="muted">还没有库存记录。可在 SKU 页面录入，或在“导入”页上传库存表。</p>
+{% endif %}
+
 <h2>成员属性（逐成员对照）</h2>
 <div class="table-wrap"><table>
 <thead><tr><th>字段</th><th>取值</th><th>成员一致</th></tr></thead>
@@ -16,15 +48,17 @@
 {% endfor %}
 </tbody></table></div>
 
-<h2>品牌号 / 供应商资料 / 分别报价</h2>
+<h2>SKU / 品牌号 / 供应商资料 / 分别报价</h2>
 <div class="table-wrap"><table>
-<thead><tr><th>供应商</th><th>编号</th><th>原始名称</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>OE</th><th>当前报价</th><th>MOQ</th><th>报价日期</th><th>来源</th></tr></thead>
+<thead><tr><th>图片</th><th>供应商</th><th>编号</th><th>库存</th><th>原始名称</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>OE</th><th>当前报价</th><th>MOQ</th><th>报价日期</th><th>来源</th></tr></thead>
 <tbody>
 {% for m in members %}
 {% with offer=m.current_offer %}
 <tr>
+  <td>{% if m.primary_image %}<img class="thumb" src="{{ m.primary_image.thumb_url }}" alt="{{ m }}" loading="lazy">{% else %}<span class="thumb-empty">无图</span>{% endif %}</td>
   <td>{{ m.supplier.name }}</td>
   <td><a href="{% url 'catalog:item_detail' m.pk %}">{{ m.supplier_part_no }}</a>{% if not m.present_in_latest %} <span class="tag warn">最新文件未出现</span>{% endif %}</td>
+  <td>{{ m.stock_total|default_if_none:"—" }}</td>
   <td>{{ m.name }}</td><td>{{ m.position }}</td><td>{{ m.fitment_label }}</td><td class="mono">{{ m.dims_label }}</td>
   <td class="mono">{% for pn in m.part_numbers.all %}{% if pn.kind == "oe" %}{{ pn.number_raw }} {% endif %}{% endfor %}</td>
   <td>{% if offer.price is not None %}{{ offer.price|floatformat:2 }} {{ offer.currency }}{% else %}<span class="tag bad">缺失</span>{% endif %}</td>

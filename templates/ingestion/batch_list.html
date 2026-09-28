@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block extra_head %}{% include "_filepond_assets.html" %}{% endblock %}
 {% block title %}导入 · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>导入资料</h1>
@@ -7,6 +8,19 @@
   <button type="submit">上传并预览</button>
   <p class="muted">上传后先进入预览：查看识别出的表头与列映射、可以调整，确认后才入库。原件按 sha256 归档、不会覆盖；内容相同且已成功导入的文件会被识别为重复。</p>
 </form>
+<h2 id="stock">导入库存表</h2>
+<form class="box" method="post" action="{% url 'catalog:stock_import' %}" enctype="multipart/form-data">{% csrf_token %}
+  {{ stock_form.as_p }}
+  <button type="submit">导入库存</button>
+  <p class="muted">按“供应商 + 编号”匹配 SKU（编号忽略大小写、空格、连字符）；每行库存会成为该 SKU 在该仓库的最新库存，旧值保留为历史。匹配不上的行不会写入，列在结果页。</p>
+</form>
+{% if stock_imports %}
+<div class="table-wrap"><table><thead><tr><th>#</th><th>库存表</th><th>结果</th><th>导入人</th><th>时间</th></tr></thead><tbody>
+{% for s in stock_imports %}<tr><td><a href="{% url 'catalog:stock_import_detail' s.pk %}">{{ s.pk }}</a></td><td>{{ s.original_name }}</td>
+<td>{% for k, v in s.stats.items %}<span class="tag">{{ k }} {{ v }}</span> {% endfor %}</td><td>{{ s.uploaded_by|default:"—" }}</td><td class="muted">{{ s.created|date:"Y-m-d H:i" }}</td></tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
 <h2>导入批次</h2>
 {% include "ingestion/_batch_table.html" %}
 {% endblock %}

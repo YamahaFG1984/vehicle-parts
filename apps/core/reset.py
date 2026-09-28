@@ -5,17 +5,28 @@ from pathlib import Path
 from django.conf import settings
 from django.db import connection, transaction
 
-from apps.catalog.models import FieldValue, PartNumber, Product, SupplierItem, SupplierOffer
+from apps.catalog.models import (
+    FieldValue,
+    ItemImage,
+    PartNumber,
+    Product,
+    StockImport,
+    StockLevel,
+    SupplierItem,
+    SupplierOffer,
+)
 from apps.ingestion.models import ImportBatch, SourceFile, SourceRecord, Supplier
 from apps.matching.models import Issue, MatchCandidate, ReviewDecision
 
-MODELS = (ReviewDecision, Issue, MatchCandidate, SupplierOffer, PartNumber, FieldValue,
-          SupplierItem, Product, SourceRecord, ImportBatch, SourceFile, Supplier)
+MODELS = (ReviewDecision, Issue, MatchCandidate, ItemImage, StockLevel, StockImport, SupplierOffer,
+          PartNumber, FieldValue, SupplierItem, Product, SourceRecord, ImportBatch, SourceFile,
+          Supplier)
 
 
 def reset_business_data() -> int:
     """Returns the number of archived original files removed."""
     files = [sf.file for sf in SourceFile.objects.all()]
+    files += [f for img in ItemImage.objects.all() for f in (img.image, img.thumbnail) if f]
     tables = ", ".join(connection.ops.quote_name(m._meta.db_table) for m in MODELS)
     with transaction.atomic(), connection.cursor() as cursor:
         # Restart ids so product codes begin at P-000001 again.
@@ -23,12 +34,12 @@ def reset_business_data() -> int:
     # Only a deliberate reset removes archived originals; normal operation never does.
     for f in files:
         f.delete(save=False)
-    # Remove the now-empty per-file folders (originals/<sha256>/).
-    root = Path(settings.MEDIA_ROOT) / "originals"
-    if root.is_dir():
-        for folder in root.iterdir():
-            if folder.is_dir() and not any(folder.iterdir()):
-                folder.rmdir()
+    # Remove the now-empty per-file folders (originals/<sha256>/, item_images/<id>/thumbs/).
+    for root in (Path(settings.MEDIA_ROOT) / "originals", Path(settings.MEDIA_ROOT) / "item_images"):
+        if root.is_dir():
+            for folder in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                if folder.is_dir() and not any(folder.iterdir()):
+                    folder.rmdir()
     return len(files)
 
 

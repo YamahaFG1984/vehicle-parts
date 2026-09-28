@@ -118,7 +118,30 @@ def search(query: str, *, supplier: str = "", state: str = "", limit: int | None
         results.append({"product": p, "members": members, "hits": grouped[p.pk],
                         "state": state_label, "has_open": has_open})
     results.sort(key=lambda r: r["product"].code)
-    return results if limit is None else results[:limit]
+    results = results if limit is None else results[:limit]
+    _attach_images_and_stock(results)
+    return results
+
+
+def _attach_images_and_stock(results) -> None:
+    """One query each for primary images and stock of all listed products."""
+    from .models import ItemImage, StockLevel
+
+    member_ids = [m.pk for r in results for m in r["members"]]
+    if not member_ids:
+        return
+    primaries = {img.item_id: img for img in ItemImage.objects.filter(
+        item_id__in=member_ids, is_primary=True)}
+    stock: dict[int, int] = defaultdict(int)
+    stocked = set()
+    for item_id, qty in StockLevel.objects.filter(
+            item_id__in=member_ids, is_current=True).values_list("item_id", "quantity"):
+        stock[item_id] += qty
+        stocked.add(item_id)
+    for r in results:
+        ids = [m.pk for m in r["members"]]
+        r["thumb"] = next((primaries[i] for i in ids if i in primaries), None)
+        r["stock_total"] = sum(stock[i] for i in ids) if stocked & set(ids) else None
 
 
 def similar_numbers(query: str, limit: int = 8):

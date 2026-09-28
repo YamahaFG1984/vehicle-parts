@@ -15,11 +15,13 @@
 {% endif %}
 {% if results %}
 <div class="table-wrap"><table>
-<thead><tr><th>产品</th><th>分类</th><th>类别</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>成员（品牌号/供应商编号）</th><th>命中</th></tr></thead>
+<thead><tr><th>图片</th><th>产品</th><th>库存</th><th>分类</th><th>类别</th><th>位置</th><th>适配车型</th><th>尺寸</th><th>成员（品牌号/供应商编号）</th><th>命中</th></tr></thead>
 <tbody>
 {% for r in results %}
 <tr>
+  <td>{% if r.thumb %}<a href="{% url 'catalog:product_detail' r.product.code %}#images"><img class="thumb" src="{{ r.thumb.thumb_url }}" alt="{{ r.product.code }}" loading="lazy"></a>{% else %}<span class="thumb-empty">无图</span>{% endif %}</td>
   <td><a href="{% url 'catalog:product_detail' r.product.code %}">{{ r.product.code }}</a></td>
+  <td>{{ r.stock_total|default_if_none:"—" }}</td>
   <td>{% include "catalog/_state.html" with state=r.state has_open=r.has_open %}</td>
   <td>{{ r.product.category }}</td><td>{{ r.product.position }}</td>
   <td>{{ r.product.fitment_label }}</td><td class="mono">{{ r.product.dims_label }}</td>

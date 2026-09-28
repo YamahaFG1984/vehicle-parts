@@ -8,10 +8,11 @@
 
 <h2>组内记录并排对照</h2>
 <div class="table-wrap"><table>
-<thead><tr><th>产品</th><th>条目</th><th>名称</th><th>位置</th><th>适配车型</th><th>包装尺寸</th><th>OE</th><th>报价</th><th>异常</th><th>来源</th></tr></thead>
+<thead><tr><th>图片</th><th>产品</th><th>条目</th><th>名称</th><th>位置</th><th>适配车型</th><th>包装尺寸</th><th>OE</th><th>报价</th><th>异常</th><th>来源</th></tr></thead>
 <tbody>
 {% for it in group.items %}
 <tr>
+<td>{% if it.primary_image %}<a href="{{ it.primary_image.get_absolute_url }}" target="_blank" rel="noopener"><img class="thumb" src="{{ it.primary_image.thumb_url }}" alt="{{ it }}" loading="lazy"></a>{% else %}<span class="thumb-empty">无图</span>{% endif %}</td>
 <td><a href="{% url 'catalog:product_detail' it.product.code %}">{{ it.product.code }}</a></td>
 <td><a href="{% url 'catalog:item_detail' it.pk %}">{{ it }}</a></td>
 <td>{{ it.name }}</td><td>{{ it.position }}</td><td>{{ it.fitment_label }}</td>

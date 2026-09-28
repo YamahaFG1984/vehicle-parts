@@ -2,7 +2,16 @@ from django.contrib import admin
 
 from apps.ingestion.admin import ReadOnlyAdmin
 
-from .models import FieldValue, PartNumber, Product, SupplierItem, SupplierOffer
+from .models import (
+    FieldValue,
+    ItemImage,
+    PartNumber,
+    Product,
+    StockImport,
+    StockLevel,
+    SupplierItem,
+    SupplierOffer,
+)
 
 
 class ItemInline(admin.TabularInline):
@@ -63,3 +72,24 @@ class PartNumberAdmin(ReadOnlyAdmin):
     list_display = ["number_raw", "number_norm", "kind", "item"]
     list_filter = ["kind"]
     search_fields = ["number_norm", "number_raw"]
+
+
+@admin.register(ItemImage)
+class ItemImageAdmin(admin.ModelAdmin):
+    list_display = ["item", "original_name", "source", "is_primary", "width", "height",
+                    "uploaded_by", "created"]
+    list_filter = ["source", "is_primary"]
+    search_fields = ["item__supplier_part_no", "original_name", "caption"]
+    readonly_fields = ["width", "height", "thumbnail", "uploaded_by"]
+
+
+@admin.register(StockLevel)
+class StockLevelAdmin(ReadOnlyAdmin):
+    list_display = ["item", "warehouse", "quantity", "as_of", "source", "is_current", "recorded_by"]
+    list_filter = ["is_current", "source", "warehouse"]
+    search_fields = ["item__supplier_part_no"]
+
+
+@admin.register(StockImport)
+class StockImportAdmin(ReadOnlyAdmin):
+    list_display = ["pk", "original_name", "stats", "uploaded_by", "created"]

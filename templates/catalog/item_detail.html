@@ -1,11 +1,60 @@
 {% extends "base.html" %}
 {% load vp %}
+{% block extra_head %}{% include "_filepond_assets.html" %}{% endblock %}
 {% block title %}{{ item }} · {{ SITE_NAME }}{% endblock %}
 {% block content %}
 <h1>{{ item.supplier.name }} · {{ item.supplier_part_no }}</h1>
 <p>所属产品 <a href="{% url 'catalog:product_detail' item.product.code %}">{{ item.product.code }}</a> · 原始记录 {{ item.source_ref|default:"—" }} ·
 当前来源 <span class="mono">{{ item.current_record.locator_label }}</span>
 （<a href="{% url 'catalog:source_download' item.current_record.batch.source_file.pk %}">下载原件</a>）</p>
+
+<h2 id="images">图片</h2>
+{% if images %}
+<div class="gallery">
+{% for img in images %}
+<figure class="gallery-item{% if img.is_primary %} is-primary{% endif %}">
+  <a href="{{ img.get_absolute_url }}" target="_blank" rel="noopener"><img src="{{ img.thumb_url }}" alt="{{ item }} {{ img.caption }}" loading="lazy"></a>
+  <figcaption>
+    {% if img.is_primary %}<span class="tag ok">主图</span>{% endif %}
+    <span class="tag">{{ img.get_source_display }}</span> {{ img.caption }}
+    <span class="muted">{{ img.width }}×{{ img.height }} · {{ img.uploaded_by|default:"—" }} · {{ img.created|date:"Y-m-d" }}</span>
+    <span class="gallery-actions">
+      {% if not img.is_primary %}<form method="post" action="{% url 'catalog:item_image_primary' img.pk %}">{% csrf_token %}<button type="submit" class="secondary">设为主图</button></form>{% endif %}
+      <form method="post" action="{% url 'catalog:item_image_delete' img.pk %}" onsubmit="return confirm('删除这张图片？');">{% csrf_token %}<button type="submit" class="secondary">删除</button></form>
+    </span>
+  </figcaption>
+</figure>
+{% endfor %}
+</div>
+{% else %}<p class="muted">还没有图片。</p>{% endif %}
+<form class="box" method="post" action="{% url 'catalog:item_images_upload' item.pk %}" enctype="multipart/form-data">{% csrf_token %}
+  {{ image_form.non_field_errors }}
+  <p>{{ image_form.images.errors }}{{ image_form.images.label_tag }} {{ image_form.images }} <span class="muted">{{ image_form.images.help_text }}</span></p>
+  <p>{{ image_form.source.label_tag }} {{ image_form.source }} &nbsp; {{ image_form.caption.label_tag }} {{ image_form.caption }}</p>
+  <button type="submit">上传图片</button> <span class="muted">第一张图片自动成为主图。</span>
+</form>
+
+<h2 id="stock">库存</h2>
+{% if stock_levels %}
+<div class="table-wrap"><table>
+<thead><tr><th>仓库</th><th>数量</th><th>截至日期</th><th>来源</th><th>记录人</th><th>备注</th></tr></thead>
+<tbody>{% for s in stock_levels %}
+<tr><td>{{ s.warehouse }}</td><td><strong>{{ s.quantity }}</strong></td><td>{{ s.as_of }}</td>
+<td>{{ s.get_source_display }}{% if s.locator %} <span class="mono muted">{{ s.locator }}</span>{% endif %}</td>
+<td>{{ s.recorded_by|default:"—" }}</td><td>{{ s.note }}</td></tr>
+{% endfor %}</tbody></table></div>
+{% else %}<p class="muted">还没有库存记录。</p>{% endif %}
+<form class="box filters" method="post" action="{% url 'catalog:item_stock' item.pk %}">{% csrf_token %}
+  {{ stock_form.non_field_errors }}
+  {% for f in stock_form %}<label>{{ f.label }} {{ f }}</label>{{ f.errors }}{% endfor %}
+  <button type="submit">更新库存</button>
+</form>
+{% if stock_history %}
+<details class="box"><summary>库存历史（最近 {{ stock_history|length }} 条）</summary>
+<div class="table-wrap"><table><thead><tr><th>仓库</th><th>数量</th><th>截至日期</th><th>来源</th><th>记录时间</th></tr></thead><tbody>
+{% for s in stock_history %}<tr class="muted"><td>{{ s.warehouse }}</td><td>{{ s.quantity }}</td><td>{{ s.as_of }}</td><td>{{ s.get_source_display }}</td><td>{{ s.created|date:"Y-m-d H:i" }}</td></tr>{% endfor %}
+</tbody></table></div></details>
+{% endif %}
 
 <h2>字段级来源</h2>
 <div class="table-wrap"><table>

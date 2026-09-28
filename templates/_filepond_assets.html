@@ -1,0 +1,11 @@
+{% load static %}{# FilePond (vendored, no CDN) + static/js/uploads.js; include on pages with uploads. #}
+<link rel="stylesheet" href="{% static 'vendor/filepond/filepond.min.css' %}">
+<link rel="stylesheet" href="{% static 'vendor/filepond/filepond-plugin-image-preview.min.css' %}">
+<script src="{% static 'vendor/filepond/filepond-plugin-file-validate-type.min.js' %}" defer></script>
+<script src="{% static 'vendor/filepond/filepond-plugin-file-validate-size.min.js' %}" defer></script>
+<script src="{% static 'vendor/filepond/filepond-plugin-image-exif-orientation.min.js' %}" defer></script>
+<script src="{% static 'vendor/filepond/filepond-plugin-image-preview.min.js' %}" defer></script>
+<script src="{% static 'vendor/filepond/filepond-plugin-image-resize.min.js' %}" defer></script>
+<script src="{% static 'vendor/filepond/filepond-plugin-image-transform.min.js' %}" defer></script>
+<script src="{% static 'vendor/filepond/filepond.min.js' %}" defer></script>
+<script src="{% static 'js/uploads.js' %}" defer></script>

@@ -8,6 +8,8 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
+from apps.catalog.forms import StockImportForm
+from apps.catalog.models import StockImport
 from apps.core import rules
 from apps.matching.engine import run_matching
 
@@ -70,7 +72,10 @@ def batch_list(request):
         })
         return redirect("ingestion:preview", token=token)
     batches = ImportBatch.objects.select_related("source_file__supplier", "created_by")
-    return render(request, "ingestion/batch_list.html", {"form": form, "batches": batches})
+    return render(request, "ingestion/batch_list.html", {
+        "form": form, "batches": batches, "stock_form": StockImportForm(),
+        "stock_imports": StockImport.objects.select_related("uploaded_by")[:10],
+    })
 
 
 @require_http_methods(["GET", "POST"])

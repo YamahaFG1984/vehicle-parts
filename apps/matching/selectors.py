@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from apps.catalog.models import SupplierItem
+from apps.catalog.models import ItemImage, SupplierItem
 
 from .engine import DisjointSet
 from .models import Issue, MatchCandidate
@@ -64,7 +64,10 @@ def group_containing(candidate_id: int) -> ReviewGroup | None:
             for item_id, code in Issue.objects.filter(
                     item__in=items, status=Issue.Status.OPEN).values_list("item_id", "code"):
                 open_codes[item_id].append(code)
+            primaries = {img.item_id: img for img in ItemImage.objects.filter(
+                item__in=items, is_primary=True)}
             for it in items:
+                it.primary_image = primaries.get(it.pk)
                 it.open_issue_codes = sorted(open_codes.get(it.pk, []))
                 it.current_offer = next((o for o in it.offers.all() if o.is_current), None)
                 it.oe_display = ", ".join(pn.number_raw for pn in it.part_numbers.all()

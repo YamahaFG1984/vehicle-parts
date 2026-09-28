@@ -57,5 +57,6 @@ docker compose exec web python manage.py createsuperuser
 | `make_demo_samples` | 生成增量演示文件（`samples/demo/`） |
 | `demo [--with-increment] [--noinput]` | 清空业务数据后跑完整演示流程（脚本 / Docker 中必须加 `--noinput`） |
 | `reset_data [--noinput]` | 只清空业务数据（保留用户账号），之后可手动导入 |
+| `import_stock <库存表.xlsx> [--supplier X] [--warehouse W] [--as-of 日期]` | 导入库存快照（如 ERP 导出），按“供应商 + 编号”匹配 SKU |
 
 可调规则都在 `config/rules/`：列别名 `column_aliases.yaml`、类别同义词 `synonyms.yaml`、匹配参数 `matching.yaml`（带版本号）。

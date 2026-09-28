@@ -12,15 +12,16 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from apps.catalog.models import FieldValue, SupplierItem, SupplierOffer
+from apps.catalog.models import FieldValue, ItemImage, StockLevel, SupplierItem, SupplierOffer
 from apps.catalog.normalizers import category_label
 from apps.catalog.selectors import active_products, product_state, review_flags, search
+from apps.catalog.stock import totals_by_item
 from apps.ingestion.models import ImportBatch, SourceRecord
 from apps.matching.models import Issue, MatchCandidate
 from apps.matching.rules import FIELD_LABELS, REASON_LABELS
@@ -151,7 +152,16 @@ def add_criteria_sheet(wb: Workbook, scope: ExportScope, products: list) -> None
     ])
 
 
+def _stock_and_images():
+    """Current stock total and image count per SKU (one query each)."""
+    stock = totals_by_item()
+    images = dict(ItemImage.objects.values("item_id").annotate(n=Count("id"))
+                  .values_list("item_id", "n"))
+    return stock, images
+
+
 def add_products_sheet(wb: Workbook, products: list, flags) -> None:
+    stock, images = _stock_and_images()
     rows = []
     for p in products:
         members = _members(p)
@@ -166,13 +176,17 @@ def add_products_sheet(wb: Workbook, products: list, flags) -> None:
             "; ".join(sorted({oe for m in members for oe in _oe(m).split(", ") if oe})),
             ", ".join(sorted({m.supplier.name for m in members})),
             sum(flags.open_issue_counts.get(m.pk, 0) for m in members),
+            sum(stock[m.pk] for m in members if m.pk in stock)
+            if any(m.pk in stock for m in members) else "",
+            sum(images.get(m.pk, 0) for m in members),
         ])
     _sheet(wb, "归一产品", ["产品编号", "分类", "有待确认疑似", "成员数", "类别", "位置", "适配车型",
                         "尺寸(包装)", "成员属性一致性", "品牌号/供应商编号", "OE号", "供应商",
-                        "未处理异常数"], rows)
+                        "未处理异常数", "库存合计", "图片数"], rows)
 
 
 def add_members_sheet(wb: Workbook, products: list, scope: ExportScope, title: str) -> None:
+    stock, images = _stock_and_images()
     rows, fills = [], {}
     show_hits = not scope.is_full
     for p in products:
@@ -181,17 +195,30 @@ def add_members_sheet(wb: Workbook, products: list, scope: ExportScope, title: s
             row = [p.code, m.supplier.code, m.supplier_part_no, m.brand, m.name,
                    category_label(m.category), _pos(m.position), m.fitment_label, m.dims_label,
                    _oe(m), "是" if m.present_in_latest else "否（最新文件未出现）", m.source_ref,
-                   m.current_record.locator_label]
+                   m.current_record.locator_label, stock.get(m.pk, ""), images.get(m.pk, 0)]
             if show_hits:
                 row.insert(1, "命中" if hit else "")
                 if hit:
                     fills[len(rows) + 2] = HIT_FILL
             rows.append(row)
     headers = ["产品编号", "供应商", "供应商编号", "品牌", "原始名称", "类别", "位置", "适配车型",
-               "尺寸(包装)", "OE号", "在最新文件中", "原始记录ID", "来源定位"]
+               "尺寸(包装)", "OE号", "在最新文件中", "原始记录ID", "来源定位", "库存", "图片数"]
     if show_hits:
         headers.insert(1, "命中查询")
     _sheet(wb, title, headers, rows, row_fills=fills)
+
+
+def add_stock_sheet(wb: Workbook, scope: ExportScope) -> None:
+    levels = StockLevel.objects.filter(scope.item_filter("item__"), is_current=True).select_related(
+        "item__supplier", "item__product", "stock_import").order_by(
+        "item__product__code", "item__supplier__code", "item__supplier_part_no", "warehouse")
+    rows = [[
+        s.item.product.code if s.item.product else "", s.item.supplier.code,
+        s.item.supplier_part_no, s.warehouse, s.quantity, s.as_of.isoformat(),
+        s.get_source_display(), s.locator or (s.stock_import.original_name if s.stock_import else ""),
+    ] for s in levels]
+    _sheet(wb, "库存", ["产品编号", "供应商", "供应商编号", "仓库", "数量", "截至日期", "来源",
+                      "来源定位"], rows)
 
 
 def add_offers_sheet(wb: Workbook, scope: ExportScope) -> None:
@@ -309,6 +336,7 @@ def export_master(path, scope: ExportScope | None = None):
     wb = _new_workbook()
     add_products_sheet(wb, products, review_flags())
     add_members_sheet(wb, products, scope, "成员条目")
+    add_stock_sheet(wb, scope)
     add_provenance_sheet(wb, scope)
     wb.save(path)
     return path
@@ -344,6 +372,7 @@ def export_search(path, scope: ExportScope):
     add_products_sheet(wb, products, review_flags())
     add_members_sheet(wb, products, scope, "品牌号")
     add_offers_sheet(wb, scope)
+    add_stock_sheet(wb, scope)
     add_provenance_sheet(wb, scope)
     add_review_sheets(wb, scope)
     _notes(wb, "填写说明", REVIEW_NOTES)

@@ -1,0 +1,12 @@
+FilePond and plugins, vendored so pages make no external requests.
+Source: https://cdn.jsdelivr.net/npm/<package>@<version>/dist/  (MIT licence, see LICENSE.txt, © PQINA)
+
+filepond                                 4.32.12
+filepond-plugin-image-preview            4.6.12
+filepond-plugin-image-exif-orientation   1.0.11
+filepond-plugin-file-validate-type       1.2.9
+filepond-plugin-file-validate-size       2.2.8
+filepond-plugin-image-resize             2.0.10
+filepond-plugin-image-transform          3.8.8
+
+To upgrade: download the same files for the new versions, update this list, run the tests.
