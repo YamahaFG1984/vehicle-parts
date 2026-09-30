@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>演示说明 · Fit Vehicle Parts 产品数据中心</title>
+<meta name="description" content="用图示说明零件资料的可追溯归档、归一化、匹配复核、结果样例与持续维护。">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+<style>
+  .hero { padding: 26px 0 8px; }
+  .hero-grid, .decision-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin:18px 0; }
+  .metric { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; }
+  .metric strong { display:block; font-size:24px; color:var(--accent); line-height:1.2; }
+  .metric span { color:var(--muted); font-size:13px; }
+  .rule { border:1px solid var(--border); border-radius:10px; padding:14px; background:var(--surface); }
+  .rule h3 { margin:0 0 6px; }
+  .rule.ok { border-top:4px solid var(--ok); }.rule.warn { border-top:4px solid var(--warn); }.rule.bad { border-top:4px solid var(--bad); }
+  .flow-list { display:grid; grid-template-columns:repeat(7, minmax(104px, 1fr)); gap:8px; align-items:stretch; margin:16px 0; overflow-x:auto; }
+  .flow-list div { min-width:104px; text-align:center; padding:11px 7px; border:1px solid var(--border); border-radius:8px; background:var(--surface); font-size:13px; position:relative; }
+  .flow-list div:not(:last-child)::after { content:"→"; color:var(--muted); position:absolute; right:-13px; top:31%; font-size:20px; z-index:1; }
+  .flow-list b { display:block; color:var(--accent); margin-bottom:4px; }
+  .mini { color:var(--muted); font-size:13px; }
+  .route { counter-reset:route; display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:16px 0; }
+  .route div { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; position:relative; }
+  .route div::before { counter-increment:route; content:counter(route); display:inline-grid; place-items:center; width:24px; height:24px; border-radius:99px; background:var(--accent); color:white; font-weight:700; margin-bottom:7px; }
+  @media(max-width:700px) { .hero-grid,.decision-grid,.route { grid-template-columns:1fr; } .flow-list { grid-template-columns:repeat(7, 120px); } }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="topbar-inner">
+  <a class="brand" href="index.html">Fit Vehicle Parts 产品数据中心</a>
+  <a class="nav" href="index.html">首页</a>
+  <a class="nav" href="brief.html">交付说明</a>
+  <a class="nav" href="demo-explanation.html" aria-current="page">演示说明</a>
+  <a class="nav" href="design.html">设计文档</a>
+  <button class="theme-toggle" type="button">明/暗</button>
+</div></header>
+
+<div class="layout">
+<nav class="toc" aria-label="目录"><p>演示目录</p><ol>
+  <li><a href="#overview">1. 系统要解决什么</a></li>
+  <li><a href="#model">2. 数据模型</a></li>
+  <li><a href="#flow">3. 处理流程</a></li>
+  <li><a href="#match">4. 匹配与人工复核</a></li>
+  <li><a href="#results">5. 结果与异常样例</a></li>
+  <li><a href="#trace">6. 来源可追溯</a></li>
+  <li><a href="#maintain">7. 持续维护</a></li>
+  <li><a href="#demo">8. 演示讲解路线</a></li>
+</ol></nav>
+
+<main>
+<section class="hero" id="overview">
+<h1>零件资料归一化：演示说明</h1>
+<p class="subtitle">把供应商 Excel / CSV / PDF 变成可查询、可核对、可导出，并且每个字段能追回原始出处的产品档案。</p>
+<div class="callout"><p><strong>设计原则：</strong>原件只追加不覆盖；证据不足时宁可待确认，绝不贸然合并；人工判断优先、可审计，新增资料可持续增量维护。</p></div>
+<div class="hero-grid">
+  <div class="metric"><strong>可追溯</strong><span>文件 · 页/工作表 · 行 · 列</span></div>
+  <div class="metric"><strong>可解释</strong><span>原因码、冲突、缺失、置信度</span></div>
+  <div class="metric"><strong>可持续</strong><span>增量导入、规则重跑、离线回写</span></div>
+</div>
+</section>
+
+<h2 id="model">1. 数据模型：证据、档案、判断三层</h2>
+<p>将“事实”和“判断”分开保存：原始资料永远保留，归一产品可以按规则重算，人工决定则单独形成审计记录。</p>
+<figure class="diagram"><svg viewBox="0 0 900 410" role="img" aria-label="三层数据模型关系图">
+<defs><marker id="m-model" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+<rect x="24" y="38" width="230" height="320" rx="10" class="box-accent"/><text x="139" y="71" text-anchor="middle" class="t-b">① 证据层 · 不可覆盖</text>
+<rect x="47" y="95" width="184" height="44" rx="6" class="box"/><text x="139" y="122" text-anchor="middle" class="t">Supplier / SourceFile</text>
+<rect x="47" y="157" width="184" height="58" rx="6" class="box"/><text x="139" y="181" text-anchor="middle" class="t">ImportBatch</text><text x="139" y="201" text-anchor="middle" class="t-s">映射、统计、规则版本</text>
+<rect x="47" y="233" width="184" height="88" rx="6" class="box"/><text x="139" y="258" text-anchor="middle" class="t">SourceRecord</text><text x="139" y="279" text-anchor="middle" class="t-s">原始列值 + 行定位</text><text x="139" y="298" text-anchor="middle" class="t-s">sheet/page · row · hash</text>
+<rect x="335" y="38" width="230" height="320" rx="10" class="box-info"/><text x="450" y="71" text-anchor="middle" class="t-b">② 档案层 · 可重算</text>
+<rect x="358" y="95" width="184" height="45" rx="6" class="box"/><text x="450" y="122" text-anchor="middle" class="t">SupplierItem（SKU）</text>
+<rect x="358" y="157" width="184" height="60" rx="6" class="box"/><text x="450" y="181" text-anchor="middle" class="t">FieldValue / PartNumber</text><text x="450" y="201" text-anchor="middle" class="t-s">字段来源 / 编号索引</text>
+<rect x="358" y="234" width="184" height="66" rx="6" class="box"/><text x="450" y="259" text-anchor="middle" class="t">Offer / Stock / Image</text><text x="450" y="280" text-anchor="middle" class="t-s">报价、库存、图片沿革</text>
+<rect x="358" y="316" width="184" height="25" rx="6" class="box-ok"/><text x="450" y="334" text-anchor="middle" class="t">Product（归一产品）</text>
+<rect x="646" y="38" width="230" height="320" rx="10" class="box-warn"/><text x="761" y="71" text-anchor="middle" class="t-b">③ 判断层 · 可审计</text>
+<rect x="669" y="96" width="184" height="58" rx="6" class="box"/><text x="761" y="120" text-anchor="middle" class="t">MatchCandidate</text><text x="761" y="140" text-anchor="middle" class="t-s">候选、对比、置信度</text>
+<rect x="669" y="174" width="184" height="52" rx="6" class="box"/><text x="761" y="198" text-anchor="middle" class="t">Issue</text><text x="761" y="216" text-anchor="middle" class="t-s">缺失 / 冲突 / 异常</text>
+<rect x="669" y="246" width="184" height="62" rx="6" class="box"/><text x="761" y="270" text-anchor="middle" class="t">ReviewDecision</text><text x="761" y="290" text-anchor="middle" class="t-s">人、时间、备注、快照</text>
+<line x1="255" y1="196" x2="333" y2="196" class="line" marker-end="url(#m-model)"/><text x="294" y="181" text-anchor="middle" class="t-s">归一化</text>
+<line x1="566" y1="196" x2="644" y2="196" class="line" marker-end="url(#m-model)"/><text x="605" y="181" text-anchor="middle" class="t-s">匹配 / 复核</text>
+<path d="M761 310 C761 380 450 385 450 343" class="line-dash" marker-end="url(#m-model)"/><text x="610" y="397" text-anchor="middle" class="t-s">确认合并 / 拆分后更新 Product 归属</text>
+</svg><figcaption>核心关系：一条供应商 SKU 对应多次原始观察和字段来源；多个 SKU 经确认后归入一个 Product；每次判断都有候选和审计记录。</figcaption></figure>
+
+<h2 id="flow">2. 处理流程：先预览，后入库，再匹配</h2>
+<div class="flow-list" aria-label="处理流程"><div><b>1. 上传</b>xlsx / csv / pdf</div><div><b>2. 归档</b>sha256 原件</div><div><b>3. 提取</b>表格与定位</div><div><b>4. 映射</b>表头 → 语义列</div><div><b>5. 归一</b>类别、车型、尺寸</div><div><b>6. 增量</b>新/变/冲突</div><div><b>7. 匹配</b>自动或复核</div></div>
+<figure class="diagram"><svg viewBox="0 0 900 270" role="img" aria-label="数据导入处理流程图">
+<defs><marker id="m-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+<rect x="18" y="70" width="130" height="70" rx="8" class="box-accent"/><text x="83" y="98" text-anchor="middle" class="t-b">上传并预览</text><text x="83" y="119" text-anchor="middle" class="t-s">可改表头映射</text>
+<rect x="198" y="70" width="130" height="70" rx="8" class="box-accent"/><text x="263" y="98" text-anchor="middle" class="t-b">原件归档</text><text x="263" y="119" text-anchor="middle" class="t-s">内容哈希去重</text>
+<rect x="378" y="70" width="140" height="70" rx="8" class="box-info"/><text x="448" y="98" text-anchor="middle" class="t-b">标准化 + 校验</text><text x="448" y="119" text-anchor="middle" class="t-s">单位、币种、年份、位置</text>
+<rect x="568" y="70" width="140" height="70" rx="8" class="box-info"/><text x="638" y="98" text-anchor="middle" class="t-b">增量比对</text><text x="638" y="119" text-anchor="middle" class="t-s">新增 / 更新 / 冲突</text>
+<rect x="758" y="70" width="125" height="70" rx="8" class="box-warn"/><text x="820" y="98" text-anchor="middle" class="t-b">匹配与聚类</text><text x="820" y="119" text-anchor="middle" class="t-s">规则 + 人工</text>
+<line x1="148" y1="105" x2="196" y2="105" class="line" marker-end="url(#m-flow)"/><line x1="328" y1="105" x2="376" y2="105" class="line" marker-end="url(#m-flow)"/><line x1="518" y1="105" x2="566" y2="105" class="line" marker-end="url(#m-flow)"/><line x1="708" y1="105" x2="756" y2="105" class="line" marker-end="url(#m-flow)"/>
+<path d="M638 140 L638 201 L305 201" class="line-dash" marker-end="url(#m-flow)"/><text x="470" y="192" text-anchor="middle" class="t-s">字段变化保留历史；关键属性变化重新评估已有结论</text>
+</svg><figcaption>导入是一个原子批次：确认前只做预览；确认后才写入原件、原始行、条目与异常。重复内容按哈希识别，不重复覆盖。</figcaption></figure>
+
+<h2 id="match">3. 匹配规则、置信度与人工复核</h2>
+<p>候选只在<strong>共同 OE、同类别同车型、或同尺寸</strong>的记录中产生；名称相似仅是弱证据，编号字符串相似本身不作为合并依据。</p>
+<div class="decision-grid">
+  <div class="rule ok"><h3>自动归一</h3><p>跨供应商 + 共用 OE + 类别、车型（含年份）、位置均一致。包装尺寸是辅助证据，换包装只提示，不阻断。</p></div>
+  <div class="rule warn"><h3>人工复核</h3><p>共用 OE 但缺字段/有冲突；无 OE 但属性相近；同供应商两个编号；年份只部分重叠。</p></div>
+  <div class="rule bad"><h3>规则排除</h3><p>无共同 OE 且类别、左右位置或适配车型存在硬冲突。保留排除理由，不误合并。</p></div>
+</div>
+<figure class="diagram"><svg viewBox="0 0 900 300" role="img" aria-label="匹配决策树">
+<defs><marker id="m-decision" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+<rect x="340" y="22" width="220" height="54" rx="8" class="box-info"/><text x="450" y="45" text-anchor="middle" class="t-b">候选对：逐字段比较</text><text x="450" y="64" text-anchor="middle" class="t-s">OE · 类别 · 车型 · 尺寸 · 位置</text>
+<rect x="340" y="112" width="220" height="54" rx="8" class="box"/><text x="450" y="135" text-anchor="middle" class="t-b">有硬冲突？</text><text x="450" y="154" text-anchor="middle" class="t-s">类别 / 车型 / 左右位置</text>
+<rect x="32" y="215" width="222" height="57" rx="8" class="box-warn"/><text x="143" y="239" text-anchor="middle" class="t-b">是：进入人工复核</text><text x="143" y="258" text-anchor="middle" class="t-s">共用 OE 时说明冲突与风险</text>
+<rect x="340" y="215" width="220" height="57" rx="8" class="box-ok"/><text x="450" y="239" text-anchor="middle" class="t-b">否：证据是否齐全？</text><text x="450" y="258" text-anchor="middle" class="t-s">跨供应商 + 共用 OE + 必要字段一致</text>
+<rect x="646" y="215" width="222" height="57" rx="8" class="box-ok"/><text x="757" y="239" text-anchor="middle" class="t-b">是：自动归一</text><text x="757" y="258" text-anchor="middle" class="t-s">再经聚类冲突检查</text>
+<line x1="450" y1="76" x2="450" y2="110" class="line" marker-end="url(#m-decision)"/><path d="M340 139 L143 139 L143 213" class="line" marker-end="url(#m-decision)"/><text x="240" y="131" class="t-s">是</text><line x1="450" y1="166" x2="450" y2="213" class="line" marker-end="url(#m-decision)"/><text x="462" y="190" class="t-s">否</text><line x1="560" y1="243" x2="644" y2="243" class="line" marker-end="url(#m-decision)"/><text x="595" y="234" class="t-s">齐全</text>
+</svg><figcaption>风险控制：硬冲突从不自动合并；同一供应商的两个编号也从不自动合并；若传递聚类会把冲突条目带入同一产品，规则合并会暂停，转人工。</figcaption></figure>
+<div class="callout warn"><p><strong>置信度不是自动合并开关。</strong>置信度 = 相等字段权重 ÷ 全部适用字段权重；缺失字段计入分母，有硬冲突封顶 0.3。真正的自动条件是“必要证据完整且无冲突”，避免高相似名称或共同包装误导系统。</p></div>
+
+<h2 id="results">4. 处理结果样例与异常 / 待确认清单</h2>
+<h3>归一产品样例：共同 OE + 关键属性一致</h3>
+<div class="table-wrap"><table><thead><tr><th>归一产品</th><th>供应商 SKU</th><th>OE</th><th>归一依据</th><th>结果</th></tr></thead><tbody>
+<tr><td><strong>P-000001</strong><br><span class="mini">Front Grille · Volvo VNL 2018–2023</span></td><td>A:A-01-00<br>B:B01X<br>C:C-1001</td><td>OE-VNL-1001</td><td>跨供应商；OE、类别、车型年份一致；位置不适用；C 的 mm 尺寸标准化为 cm</td><td><span class="tag ok">已确认归一</span></td></tr>
+<tr><td><strong>P-000003</strong><br><span class="mini">Side Grille · Left</span></td><td>A:A-03-L<br>B:B03L</td><td>OE-VNL-1003</td><td>共同 OE；类别、车型年份和左侧位置一致</td><td><span class="tag ok">已确认归一</span></td></tr>
+</tbody></table></div>
+<h3>异常 / 待确认清单样例</h3>
+<div class="table-wrap"><table><thead><tr><th>类型</th><th>记录 / 候选</th><th>发现的证据</th><th>系统处理与人工入口</th></tr></thead><tbody>
+<tr><td><span class="tag bad">高优先级</span></td><td>A-021 ↔ B-019</td><td>共同 OE，但 Front Grille 与 Bug Screen 类别冲突</td><td>不合并，进入 <code>/review/</code>；合并时必须写备注</td></tr>
+<tr><td><span class="tag warn">待补充</span></td><td>C-2005</td><td>缺包装尺寸</td><td>生成 MISSING_DIMS；共同 OE 也不自动合并</td></tr>
+<tr><td><span class="tag warn">疑似重复</span></td><td>A-013 ↔ A-001</td><td>属性相近但没有共同 OE，且属于同一供应商</td><td>进入复核，不因“长得像”合并</td></tr>
+<tr><td><span class="tag bad">资料质量</span></td><td>B-025</td><td>名称是 Bug Screen，包装尺寸却反复匹配同车型 Front Grille</td><td>生成 SUSPECTED_NAME_ERROR，请核对品名或尺寸</td></tr>
+<tr><td><span class="tag info">增量冲突</span></td><td>A-012 v2</td><td>车型年份变更，与原已归一证据仅部分重叠</td><td>保留旧字段历史，重新打开相关人工决定</td></tr>
+</tbody></table></div>
+<p>系统可导出完整的 <a href="samples/master_data.xlsx">处理结果</a>、<a href="samples/import_report.xlsx">增量导入报告</a> 和可填写的 <a href="samples/review_list.xlsx">异常 / 待确认清单</a>。</p>
+
+<h2 id="trace">5. 原始文件与字段来源：从结果回到证据</h2>
+<figure class="diagram"><svg viewBox="0 0 900 175" role="img" aria-label="数据来源追溯链">
+<defs><marker id="m-trace" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+<rect x="16" y="48" width="168" height="70" rx="8" class="box-accent"/><text x="100" y="76" text-anchor="middle" class="t-b">原始文件</text><text x="100" y="96" text-anchor="middle" class="t-s">sha256 / 原文件名</text>
+<rect x="244" y="48" width="168" height="70" rx="8" class="box-accent"/><text x="328" y="76" text-anchor="middle" class="t-b">原始行</text><text x="328" y="96" text-anchor="middle" class="t-s">Sheet 报价明细 · R14</text>
+<rect x="472" y="48" width="168" height="70" rx="8" class="box-info"/><text x="556" y="76" text-anchor="middle" class="t-b">字段来源</text><text x="556" y="96" text-anchor="middle" class="t-s">Package Size → 122×75×7</text>
+<rect x="700" y="48" width="184" height="70" rx="8" class="box-ok"/><text x="792" y="76" text-anchor="middle" class="t-b">产品页 / xlsx</text><text x="792" y="96" text-anchor="middle" class="t-s">可下载原件、看历史值</text>
+<line x1="184" y1="83" x2="242" y2="83" class="line" marker-end="url(#m-trace)"/><line x1="412" y1="83" x2="470" y2="83" class="line" marker-end="url(#m-trace)"/><line x1="640" y1="83" x2="698" y2="83" class="line" marker-end="url(#m-trace)"/>
+</svg><figcaption>例：产品页面的包装尺寸可回查到“哪一个文件、哪张表、哪一行、哪一列”。字段变化时新值追加，旧值仍标记为历史；报价也按供应商、日期和币种分别保存。</figcaption></figure>
+
+<h2 id="maintain">6. 后续维护：新增资料形成闭环</h2>
+<figure class="diagram"><svg viewBox="0 0 900 330" role="img" aria-label="持续维护循环图">
+<defs><marker id="m-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrowhead"/></marker></defs>
+<rect x="350" y="18" width="200" height="55" rx="8" class="box-accent"/><text x="450" y="42" text-anchor="middle" class="t-b">新供应商 / 新版本文件</text><text x="450" y="61" text-anchor="middle" class="t-s">先预览，不直接污染数据</text>
+<rect x="643" y="126" width="205" height="60" rx="8" class="box-info"/><text x="746" y="150" text-anchor="middle" class="t-b">补列别名 / 映射</text><text x="746" y="170" text-anchor="middle" class="t-s">column_aliases.yaml / --mapping</text>
+<rect x="350" y="248" width="200" height="60" rx="8" class="box-warn"/><text x="450" y="272" text-anchor="middle" class="t-b">复核与规则沉淀</text><text x="450" y="292" text-anchor="middle" class="t-s">Web 或 xlsx 回写</text>
+<rect x="52" y="126" width="205" height="60" rx="8" class="box-ok"/><text x="155" y="150" text-anchor="middle" class="t-b">增量导入 + 重匹配</text><text x="155" y="170" text-anchor="middle" class="t-s">新增 / 更新 / 冲突 / 未出现</text>
+<path d="M550 46 C670 46 746 70 746 124" class="line" marker-end="url(#m-loop)"/><path d="M746 186 C746 250 600 278 552 278" class="line" marker-end="url(#m-loop)"/><path d="M350 278 C220 278 155 242 155 188" class="line" marker-end="url(#m-loop)"/><path d="M155 126 C155 62 280 46 348 46" class="line" marker-end="url(#m-loop)"/>
+</svg><figcaption>持续维护不是“重新做一次项目”：新资料直接进入同一条流水线；反复出现的表头写法和产品叫法沉淀为规则，人工工作量随之下降。</figcaption></figure>
+<div class="table-wrap"><table><thead><tr><th>维护场景</th><th>标准操作</th></tr></thead><tbody>
+<tr><td>新供应商或新格式</td><td>网页上传 → 预览列映射 → 确认导入；命令行可先 <code>import_source 文件 --supplier D --dry-run</code>，再补 <code>column_aliases.yaml</code> 或使用映射文件。</td></tr>
+<tr><td>同供应商最新报价 / 目录</td><td>直接导入，按“供应商 + 规范化编号”产生新增、更新、冲突和本次未出现；增补文件加 <code>--partial</code>，不会误标未出现。</td></tr>
+<tr><td>调整规则</td><td>修改 <code>synonyms.yaml</code> 或 <code>matching.yaml</code> 后提升版本；先运行 <code>run_matching --dry-run</code> 看影响，再正式运行。人工决定在证据未改变时保留。</td></tr>
+<tr><td>离线人工确认</td><td>导出 <code>review_list.xlsx</code>，填写 <code>decision</code> / <code>note</code>，执行 <code>import_review 文件 --reviewer 姓名</code>；整份校验通过才写入。</td></tr>
+</tbody></table></div>
+
+<h2 id="demo">7. 演示时的讲解路线</h2>
+<div class="route"><div><strong>从查询结果开始</strong><br><span class="mini">搜索 OE-VNL-1001，展示同一产品下多家 SKU、报价、图片和来源。</span></div><div><strong>回看原始证据</strong><br><span class="mini">打开条目详情、字段来源和原始行，下载原文件。</span></div><div><strong>展示风险控制</strong><br><span class="mini">打开复核队列，对照共同 OE 却类别冲突的候选。</span></div><div><strong>展示持续维护</strong><br><span class="mini">导入 A v2 或新供应商 C，查看新增、调价、冲突和规则重跑。</span></div></div>
+<div class="callout ok"><p><strong>演示结论：</strong>系统自动处理格式统一、重复文件、增量识别和证据充分的跨供应商合并；涉及冲突、缺失、同供应商重复、传递合并或资料质量异常时，系统给出可解释的待确认项，由人在 Web 或 xlsx 中完成最终判断。</p></div>
+<footer>详细设计见 <a href="design.html">设计文档</a>；完整交付对应关系见 <a href="brief.html">交付说明</a>；样例文件在 <a href="samples/">docs/samples/</a>。</footer>
+</main></div>
+</body></html>
